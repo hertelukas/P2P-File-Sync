@@ -2,27 +2,40 @@ stages:
   - build
   - test
 
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - target/
+    - .cargo/
+    - .rustup/
+
 cargo-build:
   stage: build
   before_script:
     - apt-get update
     - apt-get install -y curl build-essential
+    - export CARGO_HOME=$CI_PROJECT_DIR/.cargo  # Ensure the environment variables are set
+    - export RUSTUP_HOME=$CI_PROJECT_DIR/.rustup
     - curl https://sh.rustup.rs -sSf | sh -s -- -y
-    - source $HOME/.cargo/env
+    - source $CI_PROJECT_DIR/.cargo/env
   script:
-    - cargo build
+    - cargo build --release
   artifacts:
-    paths:
-      - $HOME/.cargo
-      - $HOME/.rustup
     when: on_success
-    access: none
-    expire_in: 1 days
+    paths:
+      - target/release/
+      - .cargo/
+      - .rustup/
 
 cargo-test:
   stage: test
+  image: debian:stable-slim
   before_script:
-    - source $HOME/.cargo/env
+    - apt-get update
+    - apt-get install -y curl build-essential
+    - export CARGO_HOME=$CI_PROJECT_DIR/.cargo  # Ensure cargo uses the correct directory
+    - export RUSTUP_HOME=$CI_PROJECT_DIR/.rustup
+    - source $CI_PROJECT_DIR/.cargo/env
   script:
     - cargo test
   dependencies:
