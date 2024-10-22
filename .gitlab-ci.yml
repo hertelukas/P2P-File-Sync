@@ -2,7 +2,7 @@ stages:
   - build
   - test
 
-build:
+cargo-build:
   stage: build
   before_script:
     - apt-get update
@@ -11,8 +11,19 @@ build:
     - source $HOME/.cargo/env
   script:
     - cargo build
+  artifacts:
+    paths:
+      - $HOME/.cargo
+      - $HOME/.rustup
+    when: on_success
+    access: none
+    expire_in: 1 days
 
-tests:
+cargo-test:
   stage: test
+  before_script:
+    - source $HOME/.cargo/env
   script:
     - cargo test
+  dependencies:
+    - cargo-build
