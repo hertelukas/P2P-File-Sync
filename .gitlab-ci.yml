@@ -1,0 +1,13 @@
+stages:
+  - build
+  - test
+
+build:
+  stage: build
+  script:
+    - cargo build
+
+tests:
+  stage: test
+  script:
+    - cargo test
