@@ -4,6 +4,11 @@ stages:
 
 build:
   stage: build
+  before_script:
+    - apt-get update
+    - apt-get install -y curl build-essential
+    - curl https://sh.rustup.rs -sSf | sh -s -- -y
+    - source $HOME/.cargo/env
   script:
     - cargo build
 
