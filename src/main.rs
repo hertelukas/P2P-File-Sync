@@ -1,4 +1,4 @@
-mod watcher;
+use p2p_file_sync::watcher;
 
 fn main() {
     env_logger::init();
