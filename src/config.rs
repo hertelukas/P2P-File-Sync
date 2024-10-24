@@ -110,4 +110,8 @@ impl Config {
             Err(Error::NoConfigDir)
         }
     }
+
+    pub fn paths(&self) -> &Vec<WatchedFolder> {
+        &self.paths
+    }
 }

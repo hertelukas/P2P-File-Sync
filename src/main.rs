@@ -9,7 +9,7 @@ fn main() -> eyre::Result<()> {
 
     log::info!("Using config {config:?}");
 
-    if let Err(error) = watcher::watch("/home/lukas/Downloads") {
+    if let Err(error) = watcher::watch(&config.paths()) {
         log::error!("Error: {error:?}");
     }
 
