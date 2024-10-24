@@ -5,15 +5,7 @@ fn main() -> eyre::Result<()> {
     env_logger::init();
     color_eyre::install()?;
 
-    let config = match Config::load() {
-        Ok(conf) => conf,
-        // TODO probably not so good idea, because we just create a new one
-        // if anything fails
-        Err(e) => {
-            log::warn!("{}", e);
-            Config::create_default()?
-        }
-    };
+    let config = Config::get()?;
 
     log::info!("Using config {config:?}");
 
