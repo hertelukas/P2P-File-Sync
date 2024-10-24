@@ -1,17 +1,9 @@
-use p2p_file_sync::config::Config;
-use p2p_file_sync::watcher;
+use env_logger::Env;
+use p2p_file_sync::manager;
 
 fn main() -> eyre::Result<()> {
-    env_logger::init();
+    // Use info as default logging level
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     color_eyre::install()?;
-
-    let config = Config::get()?;
-
-    log::info!("Using config {config:?}");
-
-    if let Err(error) = watcher::watch(&config.paths()) {
-        log::error!("Error: {error:?}");
-    }
-
-    Ok(())
+    manager::run()
 }
