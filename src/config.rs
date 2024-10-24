@@ -29,8 +29,8 @@ pub enum Error {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub paths: WatchedFolder,
-    pub peers: Peer,
+    paths: Vec<WatchedFolder>,
+    peers: Vec<Peer>,
 }
 
 impl Config {
@@ -47,6 +47,24 @@ impl Config {
         let content = toml::to_string_pretty(self).map_err(Error::from)?;
         fs::write(&path, content).map_err(|source| Error::WriteError { path, source })?;
         Ok(())
+    }
+
+    /// Creates a default config, stores it and returns it
+    /// TODO this currently just overrides existing configs
+    pub fn create_default() -> Result<Self, Error> {
+        let mut paths: Vec<WatchedFolder> = vec![];
+        if let Some(docs) = dirs::document_dir() {
+            paths.push(WatchedFolder::new(docs));
+        };
+
+        let config = Config {
+            paths,
+            peers: vec![],
+        };
+
+        config.store()?;
+
+        Ok(config)
     }
 
     fn config_path() -> Result<PathBuf, Error> {

@@ -1,11 +1,17 @@
 use p2p_file_sync::config::Config;
 use p2p_file_sync::watcher;
 
-fn main() ->eyre::Result<()> {
+fn main() -> eyre::Result<()> {
     env_logger::init();
     color_eyre::install()?;
 
-    let config = Config::load()?;
+    let config = match Config::load() {
+        Ok(conf) => conf,
+        Err(e) => {
+            log::warn!("{}", e);
+            Config::create_default()?
+        }
+    };
 
     log::info!("Using config {config:?}");
 
