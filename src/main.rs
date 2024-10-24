@@ -7,6 +7,8 @@ fn main() -> eyre::Result<()> {
 
     let config = match Config::load() {
         Ok(conf) => conf,
+        // TODO probably not so good idea, because we just create a new one
+        // if anything fails
         Err(e) => {
             log::warn!("{}", e);
             Config::create_default()?
