@@ -1,6 +1,8 @@
+use std::path::PathBuf;
+
 use crate::types::WatchedFolder;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Debug)]
 pub enum WatchCommand {
@@ -11,6 +13,7 @@ pub enum WatchCommand {
 pub async fn watch(
     folders: &Vec<WatchedFolder>,
     mut cmd_rx: Receiver<WatchCommand>,
+    handler_tx: Sender<PathBuf>,
 ) -> notify::Result<()> {
     // Channel to receive file events
     let (tx, mut rx) = mpsc::channel(1);
@@ -34,7 +37,11 @@ pub async fn watch(
     loop {
         tokio::select! {
             Some(event) = rx.recv() => match event {
-                Ok(event) => log::info!("Change: {event:?}"),
+                Ok(event) => {
+                    for path in event.paths {
+                        handler_tx.send(path).await.unwrap();
+                    }
+                }
                 Err(error) => log::error!("Error: {error:?}"),
             },
 
@@ -49,3 +56,5 @@ pub async fn watch(
         }
     }
 }
+
+// pub async fn
