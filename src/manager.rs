@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::watcher;
 
 pub async fn run() -> eyre::Result<()> {
-    let config = Config::get()?;
+    let config = Config::get().await?;
 
     let (tx_watch_cmd, rx_watch_cmd) = mpsc::channel(100);
 
