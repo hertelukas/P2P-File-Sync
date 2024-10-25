@@ -14,30 +14,33 @@ pub async fn run() -> eyre::Result<()> {
 
     log::info!("Using config {config:?}");
 
+    // Task watching for changes
     let watcher_task = task::spawn(async move {
         if let Err(error) = watcher::watch(&config.paths(), rx_watch_cmd, tx_change).await {
             log::error!("Error: {error:?}");
         }
     });
 
+    // Task reacting to changes
     task::spawn(async move {
         while let Some(path) = rx_change.recv().await {
             handle_change(path).await;
         }
     });
 
+    // Just some test code: Watching the downloads folder, wait, unwatch
     tx_watch_cmd
         .send(watcher::WatchCommand::Add {
-            folder: crate::types::WatchedFolder::new("/tmp"),
+            folder: crate::types::WatchedFolder::new(dirs::download_dir().unwrap()),
         })
         .await
         .unwrap();
 
-    let _ = tokio::time::sleep(std::time::Duration::new(5, 0)).await;
+    let _ = tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
     tx_watch_cmd
         .send(watcher::WatchCommand::Remove {
-            folder: crate::types::WatchedFolder::new("/tmp"),
+            folder: crate::types::WatchedFolder::new(dirs::download_dir().unwrap()),
         })
         .await
         .unwrap();
