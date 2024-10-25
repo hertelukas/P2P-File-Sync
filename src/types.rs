@@ -6,7 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct WatchedFolder {
     id: u32,
     path: PathBuf,
@@ -23,6 +23,10 @@ impl WatchedFolder {
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
+
+    pub fn id(&self) -> u32 {
+        self.id
+    }
 }
 
 impl fmt::Display for WatchedFolder {
@@ -31,8 +35,20 @@ impl fmt::Display for WatchedFolder {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Peer {
     ip: IpAddr,
     folders: Vec<u32>,
+}
+
+impl Peer {
+    pub fn new<T>(ip: T) -> Self
+    where
+        T: Into<IpAddr>,
+    {
+        Peer {
+            ip: ip.into(),
+            folders: vec![],
+        }
+    }
 }

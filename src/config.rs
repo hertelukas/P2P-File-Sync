@@ -24,7 +24,7 @@ pub enum Error {
     SerializeError(#[from] toml::ser::Error),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     paths: Vec<WatchedFolder>,
     peers: Vec<Peer>,
@@ -136,5 +136,79 @@ impl Config {
 
     pub fn paths(&self) -> &Vec<WatchedFolder> {
         &self.paths
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn read_emtpy() {
+        let conf = Config {
+            paths: vec![],
+            peers: vec![],
+        };
+
+        let reader = tokio_test::io::Builder::new()
+            .read(b"paths = []\npeers = []\n")
+            .build();
+        let c = Config::read(reader).await.unwrap();
+
+        assert_eq!(c, conf)
+    }
+
+    #[tokio::test]
+    async fn read_normal() {
+        let folder = WatchedFolder::new("/tmp");
+        let id = folder.id();
+        let conf = Config {
+            paths: vec![folder],
+            peers: vec![],
+        };
+
+        let bytes = format!(
+            "peers = []
+[[paths]]
+id = {id}
+path=\"/tmp\""
+        )
+        .into_bytes();
+
+        let reader = tokio_test::io::Builder::new()
+            .read(bytes.as_slice())
+            .build();
+
+        let c = Config::read(reader).await.unwrap();
+
+        assert_eq!(c, conf);
+    }
+
+    #[tokio::test]
+    async fn write_read() {
+        use tokio::io::BufWriter;
+        let folder1 = WatchedFolder::new("/tmp");
+        let folder2 = WatchedFolder::new("/tmp/foo");
+
+        let peer = Peer::new([127, 0, 0, 1]);
+
+        let conf = Config {
+            paths: vec![folder1, folder2],
+            peers: vec![peer],
+        };
+
+        let buffer = Vec::new();
+        let mut writer = BufWriter::new(buffer);
+
+        // Write our config into the buffer (instead of a file)
+        conf.write(&mut writer).await.expect("Failed to write config");
+
+        // Write the content of the buffer into our mock reader
+        let written = writer.buffer();
+        let reader = tokio_test::io::Builder::new().read(written).build();
+
+        let c = Config::read(reader).await.expect("Failed to read written config");
+
+        assert_eq!(c, conf);
     }
 }
