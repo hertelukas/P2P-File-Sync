@@ -4,15 +4,23 @@ use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::config::Config;
-use crate::watcher;
+use crate::file_sync::do_full_scan;
+use crate::{database, watcher};
 
 pub async fn run() -> eyre::Result<()> {
     let config = Config::get().await?;
+    let pool = database::setup().await?;
 
     let (tx_watch_cmd, rx_watch_cmd) = mpsc::channel(1);
     let (tx_change, mut rx_change) = mpsc::channel(1);
 
     log::info!("Using config {config:?}");
+
+    for path in config.paths() {
+        let _ = do_full_scan(path.path()).await;
+    }
+
+    log::info!("Done scanning!");
 
     // Task watching for changes
     let watcher_task = task::spawn(async move {

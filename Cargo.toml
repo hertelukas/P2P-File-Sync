@@ -12,8 +12,11 @@ eyre = "0.6.12"
 log = "0.4.22"
 notify = "6.1.1"
 rand = "0.8.5"
+ring = "0.17.8"
 serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate"] }
 thiserror = "1.0.65"
 tokio = { version = "1", features = ["full"] }
 tokio-test = "0.4.4"
 toml = "0.8.19"
+walkdir = "2.5.0"
