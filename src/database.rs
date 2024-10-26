@@ -97,3 +97,100 @@ fn get_database_path() -> Result<PathBuf, Error> {
     path.push("db.sqlite");
     Ok(path)
 }
+
+#[cfg(test)]
+mod tests {
+    use sqlx::SqlitePool;
+
+    use super::*;
+
+    async fn fill_db(pool: &SqlitePool) {
+        sqlx::query(
+            r#"
+INSERT INTO files (path, local_hash, global_hash, last_modified)
+VALUES ("/old", "aa", "bb", 12),
+("/new", "aa", "aa", 100)
+"#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[sqlx::test]
+    async fn test_tracked(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        // Check if tracked file is tracked
+        assert!(is_tracked(&pool, &Path::new("/old")).await.unwrap());
+    }
+
+    #[sqlx::test]
+    async fn test_not_track(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        // Check that new file is marked as untracked
+        assert!(!is_tracked(&pool, &Path::new("/does-not-exist"))
+            .await
+            .unwrap());
+    }
+
+    #[sqlx::test]
+    async fn test_is_newer(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        assert!(is_newer(&pool, 100, &Path::new("/old")).await.unwrap());
+    }
+
+    #[sqlx::test]
+    async fn test_modified_same(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        assert!(!is_newer(&pool, 100, &Path::new("/new")).await.unwrap());
+    }
+
+    #[sqlx::test]
+    async fn test_modified_older(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        assert!(!is_newer(&pool, 99, &Path::new("/new")).await.unwrap());
+    }
+
+    #[sqlx::test]
+    async fn test_modified_negative(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        assert!(!is_newer(&pool, -1000, &Path::new("/old")).await.unwrap());
+    }
+
+    #[sqlx::test]
+    async fn test_insert(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        let f = File {
+            path: "/insert".to_owned(),
+            local_hash: "aa".to_owned(),
+            global_hash: "bb".to_owned(),
+            last_modified: 0,
+        };
+
+        insert(&pool, f).await.unwrap();
+
+        assert!(is_tracked(&pool, &Path::new("/insert")).await.unwrap());
+    }
+
+    #[sqlx::test]
+    #[should_panic]
+    async fn test_insert_duplicate(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        let f = File {
+            path: "/new".to_owned(),
+            local_hash: "aa".to_owned(),
+            global_hash: "bb".to_owned(),
+            last_modified: 0,
+        };
+
+        insert(&pool, f).await.unwrap();
+    }
+}
