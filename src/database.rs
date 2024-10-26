@@ -1,6 +1,10 @@
-use ring::digest::Digest;
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePoolOptions, Pool, Sqlite};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use crate::types::File;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -32,6 +36,58 @@ pub async fn setup() -> Result<Pool<Sqlite>, Error> {
     sqlx::migrate!().run(&pool).await?;
 
     Ok(pool)
+}
+
+pub async fn is_tracked(pool: &sqlx::SqlitePool, path: &Path) -> Result<bool, Error> {
+    let s = path.to_string_lossy().to_string();
+    let res = sqlx::query!(
+        r#"
+SELECT COUNT(*) as count
+FROM files
+WHERE path = ?
+"#,
+        s
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(Error::from)?;
+
+    Ok(res.count > 0)
+}
+
+pub async fn is_newer(pool: &sqlx::SqlitePool, modified: i64, path: &Path) -> Result<bool, Error> {
+    let s = path.to_string_lossy().to_string();
+    let res = sqlx::query!(
+        r#"
+SELECT last_modified
+FROM files
+WHERE path = ?
+"#,
+        s
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(Error::from)?;
+
+    Ok(modified > res.last_modified)
+}
+
+pub async fn insert(pool: &sqlx::SqlitePool, file: File) -> Result<(), Error> {
+    // Insert the record into the files table
+    sqlx::query!(
+        r#"
+        INSERT INTO files (path, local_hash, global_hash, last_modified)
+        VALUES (?, ?, ?, ?)
+        "#,
+        file.path,
+        file.local_hash,
+        file.global_hash,
+        file.last_modified
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 fn get_database_path() -> Result<PathBuf, Error> {

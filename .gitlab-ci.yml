@@ -9,7 +9,11 @@ cargo-build:
     - apt-get install -y curl build-essential
     - curl https://sh.rustup.rs -sSf | sh -s -- -y
     - source $HOME/.cargo/env
+    - cargo install sqlx-cli
   script:
+    - DATABASE_URL=sqlite://test.sqlite cargo sqlx database create
+    - DATABASE_URL=sqlite://test.sqlite cargo sqlx migrate run
+    - DATABASE_URL=sqlite://test.sqlite cargo sqlx prepare
     - cargo build --release
 
 cargo-test:
@@ -19,5 +23,9 @@ cargo-test:
     - apt-get install -y curl build-essential
     - curl https://sh.rustup.rs -sSf | sh -s -- -y
     - source $HOME/.cargo/env
+    - cargo install sqlx-cli
   script:
+    - DATABASE_URL=sqlite://test.sqlite cargo sqlx database create
+    - DATABASE_URL=sqlite://test.sqlite cargo sqlx migrate run
+    - DATABASE_URL=sqlite://test.sqlite cargo sqlx prepare
     - cargo test

@@ -17,7 +17,7 @@ pub async fn run() -> eyre::Result<()> {
     log::info!("Using config {config:?}");
 
     for path in config.paths() {
-        let _ = do_full_scan(path.path()).await;
+        let _ = do_full_scan(&pool, path.path()).await?;
     }
 
     log::info!("Done scanning!");

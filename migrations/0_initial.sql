@@ -1,8 +1,6 @@
 CREATE TABLE files (
-    folder_id INTEGER NOT NULL,
-    relative_path TEXT NOT NULL,
+    path TEXT NOT NULL PRIMARY KEY,
     local_hash BLOB NOT NULL,
     global_hash BLOB NOT NULL,
-    last_modified INTEGER,
-    PRIMARY KEY (folder_id, relative_path)
+    last_modified INTEGER NOT NULL
 );
