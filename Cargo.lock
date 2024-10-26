@@ -1200,7 +1200,6 @@ dependencies = [
  "log",
  "notify",
  "rand 0.8.5",
- "ring",
  "serde",
  "sha256",
  "sqlx",
@@ -1484,21 +1483,6 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
-
-[[package]]
-name = "ring"
-version = "0.17.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c17fa4cb658e3583423e915b9f3acc01cceaee1860e33d59ebae66adc3a2dc0d"
-dependencies = [
- "cc",
- "cfg-if 1.0.0",
- "getrandom 0.2.15",
- "libc",
- "spin",
- "untrusted",
- "windows-sys 0.52.0",
-]
 
 [[package]]
 name = "rsa"
@@ -2493,12 +2477,6 @@ name = "unicode_categories"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39ec24b3121d976906ece63c9daad25b85969647682eee313cb5779fdd69e14e"
-
-[[package]]
-name = "untrusted"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
