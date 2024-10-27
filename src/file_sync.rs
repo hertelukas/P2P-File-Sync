@@ -5,7 +5,7 @@ use tokio::fs::read;
 use walkdir::WalkDir;
 
 use crate::{
-    database::{insert, is_newer, is_tracked, set_local_hash_if_newer},
+    database::{insert, is_newer, is_tracked, update_if_newer},
     types::File,
 };
 
@@ -48,7 +48,7 @@ pub async fn do_full_scan(pool: &sqlx::SqlitePool, path: &PathBuf) -> Result<(),
             if is_newer(pool, File::get_last_modified_as_unix(&entry), &entry.path()).await? {
                 let content = read(entry.path()).await.map_err(Error::from)?;
                 log::debug!("File has new modified date {entry:?}");
-                set_local_hash_if_newer(
+                update_if_newer(
                     pool,
                     File::get_last_modified_as_unix(&entry),
                     hash_data(content),

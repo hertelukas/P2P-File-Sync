@@ -72,7 +72,7 @@ WHERE path = ?
     Ok(modified > res.last_modified)
 }
 
-pub async fn set_local_hash_if_newer(
+pub async fn update_if_newer(
     pool: &sqlx::SqlitePool,
     modified: i64,
     hash: Vec<u8>,
@@ -82,10 +82,11 @@ pub async fn set_local_hash_if_newer(
     sqlx::query!(
         r#"
 UPDATE files
-SET local_hash = ?
+SET local_hash = ?, last_modified = ?
 WHERE path = ? AND ? > last_modified
 "#,
         hash,
+        modified,
         s,
         modified
     )
@@ -238,23 +239,39 @@ WHERE path = ?
     async fn test_set_local_hash(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        set_local_hash_if_newer(&pool, 101, "xx".to_owned().into(), &Path::new("/new"))
+        update_if_newer(&pool, 101, "xx".to_owned().into(), &Path::new("/new"))
             .await
             .unwrap();
 
         let f = get_file(&pool, &Path::new("/new")).await;
         assert_eq!(f.local_hash, b"xx".to_vec());
+        assert_eq!(f.last_modified, 101);
     }
 
     #[sqlx::test]
     async fn test_do_not_udpate_hash_if_old(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        set_local_hash_if_newer(&pool, 99, "xx".to_owned().into(), &Path::new("/new"))
+        update_if_newer(&pool, 99, "xx".to_owned().into(), &Path::new("/new"))
             .await
             .unwrap();
 
         let f = get_file(&pool, &Path::new("/new")).await;
         assert_eq!(f.local_hash, b"aa".to_vec());
+        assert_eq!(f.last_modified, 100);
     }
+
+    #[sqlx::test]
+    async fn test_do_not_udpate_hash_if_same(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        update_if_newer(&pool, 100, "xx".to_owned().into(), &Path::new("/new"))
+            .await
+            .unwrap();
+
+        let f = get_file(&pool, &Path::new("/new")).await;
+        assert_eq!(f.local_hash, b"aa".to_vec());
+        assert_eq!(f.last_modified, 100);
+    }
+
 }
