@@ -13,7 +13,7 @@ cargo-build:
   script:
     - DATABASE_URL=sqlite://test.sqlite cargo sqlx database create
     - DATABASE_URL=sqlite://test.sqlite cargo sqlx migrate run
-    - DATABASE_URL=sqlite://test.sqlite cargo sqlx prepare
+    - DATABASE_URL=sqlite://test.sqlite cargo sqlx prepare -- --all-targets
     - cargo build --release
 
 cargo-test:
@@ -27,5 +27,5 @@ cargo-test:
   script:
     - DATABASE_URL=sqlite://test.sqlite cargo sqlx database create
     - DATABASE_URL=sqlite://test.sqlite cargo sqlx migrate run
-    - DATABASE_URL=sqlite://test.sqlite cargo sqlx prepare
+    - DATABASE_URL=sqlite://test.sqlite cargo sqlx prepare -- --all-targets
     - cargo test

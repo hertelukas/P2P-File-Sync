@@ -58,13 +58,13 @@ impl Peer {
 #[derive(sqlx::FromRow)]
 pub struct File {
     pub path: String,
-    pub local_hash: String,
-    pub global_hash: String,
+    pub local_hash: Vec<u8>,
+    pub global_hash: Vec<u8>,
     pub last_modified: i64,
 }
 
 impl File {
-    pub fn new(hash: String, entry: &DirEntry) -> Self {
+    pub fn new(hash: Vec<u8>, entry: &DirEntry) -> Self {
         let time = Self::get_last_modified_as_unix(entry);
         File {
             path: entry.path().to_string_lossy().to_string(),

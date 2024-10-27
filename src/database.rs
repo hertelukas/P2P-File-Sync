@@ -72,12 +72,35 @@ WHERE path = ?
     Ok(modified > res.last_modified)
 }
 
+pub async fn set_local_hash_if_newer(
+    pool: &sqlx::SqlitePool,
+    modified: i64,
+    hash: Vec<u8>,
+    path: &Path,
+) -> Result<(), Error> {
+    let s = path.to_string_lossy().to_string();
+    sqlx::query!(
+        r#"
+UPDATE files
+SET local_hash = ?
+WHERE path = ? AND ? > last_modified
+"#,
+        hash,
+        s,
+        modified
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn insert(pool: &sqlx::SqlitePool, file: File) -> Result<(), Error> {
     // Insert the record into the files table
     sqlx::query!(
         r#"
-        INSERT INTO files (path, local_hash, global_hash, last_modified)
-        VALUES (?, ?, ?, ?)
+INSERT INTO files (path, local_hash, global_hash, last_modified)
+VALUES (?, ?, ?, ?)
         "#,
         file.path,
         file.local_hash,
@@ -115,6 +138,23 @@ VALUES ("/old", "aa", "bb", 12),
         .execute(pool)
         .await
         .unwrap();
+    }
+
+    // This probably should be a real function at some point
+    async fn get_file(pool: &SqlitePool, path: &Path) -> File {
+        let s = path.to_string_lossy().to_string();
+        sqlx::query_as!(
+            File,
+            r#"
+SELECT *
+FROM files
+WHERE path = ?
+"#,
+            s
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
     }
 
     #[sqlx::test]
@@ -169,8 +209,8 @@ VALUES ("/old", "aa", "bb", 12),
 
         let f = File {
             path: "/insert".to_owned(),
-            local_hash: "aa".to_owned(),
-            global_hash: "bb".to_owned(),
+            local_hash: "aa".to_owned().into(),
+            global_hash: "bb".to_owned().into(),
             last_modified: 0,
         };
 
@@ -186,11 +226,35 @@ VALUES ("/old", "aa", "bb", 12),
 
         let f = File {
             path: "/new".to_owned(),
-            local_hash: "aa".to_owned(),
-            global_hash: "bb".to_owned(),
+            local_hash: "aa".to_owned().into(),
+            global_hash: "bb".to_owned().into(),
             last_modified: 0,
         };
 
         insert(&pool, f).await.unwrap();
+    }
+
+    #[sqlx::test]
+    async fn test_set_local_hash(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        set_local_hash_if_newer(&pool, 101, "xx".to_owned().into(), &Path::new("/new"))
+            .await
+            .unwrap();
+
+        let f = get_file(&pool, &Path::new("/new")).await;
+        assert_eq!(f.local_hash, b"xx".to_vec());
+    }
+
+    #[sqlx::test]
+    async fn test_do_not_udpate_hash_if_old(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        set_local_hash_if_newer(&pool, 99, "xx".to_owned().into(), &Path::new("/new"))
+            .await
+            .unwrap();
+
+        let f = get_file(&pool, &Path::new("/new")).await;
+        assert_eq!(f.local_hash, b"aa".to_vec());
     }
 }
