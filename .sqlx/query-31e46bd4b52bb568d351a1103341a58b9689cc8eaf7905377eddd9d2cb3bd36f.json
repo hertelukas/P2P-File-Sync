@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT last_modified\nFROM files\nWHERE path = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "last_modified",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "31e46bd4b52bb568d351a1103341a58b9689cc8eaf7905377eddd9d2cb3bd36f"
+}

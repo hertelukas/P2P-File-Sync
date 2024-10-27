@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT *\nFROM files\nWHERE path = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "path",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "local_hash",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "global_hash",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "last_modified",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2ae9ba6820f86c9943aa0db9ee0b8808ad6991a757586ae5f78d494a7edeb70d"
+}

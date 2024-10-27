@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT COUNT(*) as count\nFROM files\nWHERE path = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "count",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "64737c74603f2b9153fe2fbfc3e1fa724c98e2b0b835f207267b4327ade4403b"
+}
