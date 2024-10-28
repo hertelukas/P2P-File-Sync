@@ -1,0 +1,22 @@
+services:
+    p2p-node1:
+        build: .
+        networks:
+            - p2p-network
+        ports:
+            - "3618:3618"
+        environment:
+            - PEER_ADDRESS=p2p-node2:3619
+
+    p2p-node2:
+        build: .
+        networks:
+            - p2p-network
+        ports:
+            - "3619:3618"
+        environment:
+            - PEER_ADDRESS=p2p-node1:3618
+
+networks:
+    p2p-network:
+        driver: bridge
