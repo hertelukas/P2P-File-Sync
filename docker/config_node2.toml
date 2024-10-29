@@ -1,0 +1,7 @@
+[[peers]]
+ip = "172.20.0.2" # node 1
+folders = []
+
+[[paths]]
+id = 1
+path = "/root/documents"
