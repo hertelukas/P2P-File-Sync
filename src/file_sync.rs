@@ -1,13 +1,24 @@
-use std::{net::IpAddr, path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use sha2::{Digest, Sha256};
-use tokio::{fs::read, net::{TcpListener, TcpStream}};
+use tokio::{
+    fs::read,
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+};
 use walkdir::WalkDir;
 
 use crate::{
+    config::Config,
     database::{insert, is_newer, is_tracked, update_if_newer},
     types::File,
 };
+
+type MutexConf = Arc<Mutex<Config>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -24,9 +35,16 @@ fn hash_data(data: Vec<u8>) -> Vec<u8> {
 }
 
 /// Tries to connect to all peers
-pub async fn try_connect(peers: Vec<IpAddr>) {
+pub async fn try_connect(config: MutexConf) {
     loop {
-        for peer in peers.clone().into_iter() {
+        // Create a vector of owned peer copies first, so we do
+        // not have to hold the lock over the await of connect
+        let mut copied_peers = vec![];
+        for peer in config.lock().unwrap().peer_ips() {
+            copied_peers.push(peer.clone());
+        }
+
+        for peer in copied_peers {
             log::debug!("Trying to connect to {:?}", peer);
             if let Ok(stream) = TcpStream::connect((peer, 3618)).await {
                 log::info!("Connected to {:?}", peer);
@@ -54,7 +72,6 @@ pub async fn wait_incoming() {
             Err(e) => log::warn!("Failed to accept connection {}", e),
         }
     }
-
 }
 
 async fn handle_connection(mut stream: TcpStream) {

@@ -1,8 +1,10 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::{Arc, Mutex}};
 
-use crate::types::WatchedFolder;
+use crate::{config::Config, types::WatchedFolder};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc::{self, Receiver, Sender};
+
+type MutexConf = Arc<Mutex<Config>>;
 
 #[derive(Debug)]
 pub enum WatchCommand {
@@ -11,7 +13,7 @@ pub enum WatchCommand {
 }
 
 pub async fn watch(
-    folders: &Vec<WatchedFolder>,
+    config: MutexConf,
     mut cmd_rx: Receiver<WatchCommand>,
     handler_tx: Sender<PathBuf>,
 ) -> notify::Result<()> {
@@ -29,7 +31,7 @@ pub async fn watch(
         )?
     };
 
-    for path in folders {
+    for path in config.lock().unwrap().paths() {
         log::info!("Watching {:?}", &path);
         watcher.watch(path.path(), RecursiveMode::Recursive)?;
     }

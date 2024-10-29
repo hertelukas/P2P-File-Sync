@@ -1,6 +1,6 @@
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task;
 
@@ -9,7 +9,7 @@ use crate::file_sync::{do_full_scan, try_connect, wait_incoming};
 use crate::{database, watcher};
 
 pub async fn run() -> eyre::Result<()> {
-    let config = Config::get().await?;
+    let config = Arc::new(Mutex::new(Config::get().await?));
     let pool = database::setup().await?;
 
     let (tx_watch_cmd, rx_watch_cmd) = mpsc::channel(1);
@@ -17,17 +17,16 @@ pub async fn run() -> eyre::Result<()> {
 
     log::info!("Using config {config:?}");
 
-    for path in config.paths() {
+    for path in config.lock().unwrap().paths() {
         let _ = do_full_scan(&pool, path.path()).await?;
     }
 
     log::info!("Done scanning!");
 
-    let peers = config.peer_ips().clone();
-
+    let watcher_config_handle = config.clone();
     // Task watching for changes
     task::spawn(async move {
-        if let Err(error) = watcher::watch(&config.paths(), rx_watch_cmd, tx_change).await {
+        if let Err(error) = watcher::watch(watcher_config_handle, rx_watch_cmd, tx_change).await {
             log::error!("Error: {error:?}");
         }
     });
@@ -40,8 +39,9 @@ pub async fn run() -> eyre::Result<()> {
     });
 
 
+    let connector_config_handle = config.clone();
     // Periodically try to connect to the peers
-    tokio::spawn(try_connect(peers));
+    tokio::spawn(try_connect(connector_config_handle));
     // And listen if someone wants to connect to us
     wait_incoming().await;
 
