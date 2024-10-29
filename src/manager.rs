@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::config::Config;
-use crate::file_sync::do_full_scan;
+use crate::file_sync::{do_full_scan, try_connect, wait_incoming};
 use crate::{database, watcher};
 
 pub async fn run() -> eyre::Result<()> {
@@ -22,8 +23,10 @@ pub async fn run() -> eyre::Result<()> {
 
     log::info!("Done scanning!");
 
+    let peers = config.peer_ips().clone();
+
     // Task watching for changes
-    let watcher_task = task::spawn(async move {
+    task::spawn(async move {
         if let Err(error) = watcher::watch(&config.paths(), rx_watch_cmd, tx_change).await {
             log::error!("Error: {error:?}");
         }
@@ -36,24 +39,11 @@ pub async fn run() -> eyre::Result<()> {
         }
     });
 
-    // Just some test code: Watching the downloads folder, wait, unwatch
-    tx_watch_cmd
-        .send(watcher::WatchCommand::Add {
-            folder: crate::types::WatchedFolder::new(dirs::download_dir().unwrap()),
-        })
-        .await
-        .unwrap();
 
-    let _ = tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-
-    tx_watch_cmd
-        .send(watcher::WatchCommand::Remove {
-            folder: crate::types::WatchedFolder::new(dirs::download_dir().unwrap()),
-        })
-        .await
-        .unwrap();
-
-    let _ = watcher_task.await;
+    // Periodically try to connect to the peers
+    tokio::spawn(try_connect(peers));
+    // And listen if someone wants to connect to us
+    wait_incoming().await;
 
     Ok(())
 }

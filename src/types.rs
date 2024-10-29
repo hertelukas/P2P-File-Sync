@@ -39,7 +39,7 @@ impl fmt::Display for WatchedFolder {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Peer {
-    ip: IpAddr,
+    pub ip: IpAddr,
     folders: Vec<u32>,
 }
 

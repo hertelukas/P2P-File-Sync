@@ -1,5 +1,6 @@
 use dirs;
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::path::PathBuf;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -136,6 +137,14 @@ impl Config {
 
     pub fn paths(&self) -> &Vec<WatchedFolder> {
         &self.paths
+    }
+
+    pub fn peer_ips(&self) -> Vec<IpAddr> {
+        let mut res = vec![];
+        for peer in &self.peers {
+            res.push(peer.ip.clone());
+        }
+        res
     }
 }
 

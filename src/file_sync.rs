@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use std::{net::IpAddr, path::PathBuf, time::Duration};
 
 use sha2::{Digest, Sha256};
-use tokio::fs::read;
+use tokio::{fs::read, net::{TcpListener, TcpStream}};
 use walkdir::WalkDir;
 
 use crate::{
@@ -21,6 +21,44 @@ fn hash_data(data: Vec<u8>) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(data);
     hasher.finalize().to_vec()
+}
+
+/// Tries to connect to all peers
+pub async fn try_connect(peers: Vec<IpAddr>) {
+    loop {
+        for peer in peers.clone().into_iter() {
+            log::debug!("Trying to connect to {:?}", peer);
+            if let Ok(stream) = TcpStream::connect((peer, 3618)).await {
+                log::info!("Connected to {:?}", peer);
+                tokio::spawn(async move {
+                    handle_connection(stream).await;
+                });
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(300)).await;
+    }
+}
+
+pub async fn wait_incoming() {
+    let listener = TcpListener::bind("0.0.0.0:3618").await.unwrap();
+
+    log::info!("Listening on {:?}", listener.local_addr());
+
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
+                tokio::spawn(async move {
+                    handle_connection(stream).await;
+                });
+            }
+            Err(e) => log::warn!("Failed to accept connection {}", e),
+        }
+    }
+
+}
+
+async fn handle_connection(mut stream: TcpStream) {
+    todo!();
 }
 
 /// Updates the database by recursively iterating over all files in the path.
