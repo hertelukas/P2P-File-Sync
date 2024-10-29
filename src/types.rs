@@ -53,6 +53,14 @@ impl Peer {
             folders: vec![],
         }
     }
+
+    pub fn folders(&self) -> Vec<u32> {
+        self.folders.clone()
+    }
+
+    pub fn share_folder(&mut self, id: u32) {
+        self.folders.push(id);
+    }
 }
 
 #[derive(sqlx::FromRow)]

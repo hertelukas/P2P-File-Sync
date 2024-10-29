@@ -48,8 +48,9 @@ pub async fn try_connect(config: MutexConf) {
             log::debug!("Trying to connect to {:?}", peer);
             if let Ok(stream) = TcpStream::connect((peer, 3618)).await {
                 log::info!("Connected to {:?}", peer);
+                let config_handle = config.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream).await;
+                    handle_connection(stream, config_handle).await;
                 });
             }
         }
@@ -57,7 +58,7 @@ pub async fn try_connect(config: MutexConf) {
     }
 }
 
-pub async fn wait_incoming() {
+pub async fn wait_incoming(config: MutexConf) {
     let listener = TcpListener::bind("0.0.0.0:3618").await.unwrap();
 
     log::info!("Listening on {:?}", listener.local_addr());
@@ -65,8 +66,9 @@ pub async fn wait_incoming() {
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
+                let config = config.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream).await;
+                    handle_connection(stream, config).await;
                 });
             }
             Err(e) => log::warn!("Failed to accept connection {}", e),
@@ -74,8 +76,23 @@ pub async fn wait_incoming() {
     }
 }
 
-async fn handle_connection(mut stream: TcpStream) {
-    todo!();
+async fn handle_connection(stream: TcpStream, config: MutexConf) {
+    let peer_addr = match stream.peer_addr() {
+        Ok(addr) => addr,
+        Err(e) => {
+            log::error!("Could not read peer address: {e}, dropping connection");
+            return;
+        },
+    };
+
+    let folders = match config.lock().unwrap().shared_folders(peer_addr.ip()) {
+        Some(ids) => ids,
+        None => {
+            log::info!("Not sharing any folder with this peer. Dropping connection");
+            return;
+        }
+    };
+
 }
 
 /// Updates the database by recursively iterating over all files in the path.

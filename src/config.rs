@@ -139,6 +139,20 @@ impl Config {
         &self.paths
     }
 
+    /// Returns the id's of the folders, shared with the peer
+    pub fn shared_folders<T>(&self, ip: T) -> Option<Vec<u32>>
+    where
+        T: Into<IpAddr>,
+    {
+        let ip = ip.into();
+        for peer in &self.peers {
+            if peer.ip == ip {
+                return Some(peer.folders().clone());
+            }
+        }
+        None
+    }
+
     pub fn peer_ips(&self) -> Vec<IpAddr> {
         let mut res = vec![];
         for peer in &self.peers {
@@ -210,14 +224,36 @@ path=\"/tmp\""
         let mut writer = BufWriter::new(buffer);
 
         // Write our config into the buffer (instead of a file)
-        conf.write(&mut writer).await.expect("Failed to write config");
+        conf.write(&mut writer)
+            .await
+            .expect("Failed to write config");
 
         // Write the content of the buffer into our mock reader
         let written = writer.buffer();
         let reader = tokio_test::io::Builder::new().read(written).build();
 
-        let c = Config::read(reader).await.expect("Failed to read written config");
+        let c = Config::read(reader)
+            .await
+            .expect("Failed to read written config");
 
         assert_eq!(c, conf);
+    }
+
+    #[test]
+    fn test_shared_folders() {
+        let mut p1 = Peer::new([127, 0, 0, 1]);
+        let mut p2 = Peer::new([192, 168, 0, 1]);
+
+        p1.share_folder(1);
+        p1.share_folder(3);
+        p2.share_folder(2);
+
+        let conf = Config {
+            paths: vec![],
+            peers: vec![p1, p2],
+        };
+
+        assert_eq!(conf.shared_folders([127, 0, 0, 1]), vec![1, 3].into());
+        assert_eq!(conf.shared_folders([192, 168, 0, 1]), vec![2].into());
     }
 }

@@ -39,11 +39,12 @@ pub async fn run() -> eyre::Result<()> {
     });
 
 
-    let connector_config_handle = config.clone();
     // Periodically try to connect to the peers
+    let connector_config_handle = config.clone();
     tokio::spawn(try_connect(connector_config_handle));
     // And listen if someone wants to connect to us
-    wait_incoming().await;
+    let listener_config_handle = config.clone();
+    wait_incoming(listener_config_handle).await;
 
     Ok(())
 }
