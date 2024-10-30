@@ -7,7 +7,6 @@ use std::{
 use sha2::{Digest, Sha256};
 use tokio::{
     fs::read,
-    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
 use walkdir::WalkDir;
@@ -82,7 +81,7 @@ async fn handle_connection(stream: TcpStream, config: MutexConf) {
         Err(e) => {
             log::error!("Could not read peer address: {e}, dropping connection");
             return;
-        },
+        }
     };
 
     let folders = match config.lock().unwrap().shared_folders(peer_addr.ip()) {
@@ -92,14 +91,13 @@ async fn handle_connection(stream: TcpStream, config: MutexConf) {
             return;
         }
     };
-
 }
 
 /// Updates the database by recursively iterating over all files in the path.
 /// This is done by following these steps:
 /// 1. Check if the file is tracked: If not, insert and done.
 /// 2. Check if the file has a newer modified date. If not, done.
-/// 3. Calculate the file hash and update the entry
+/// 3. Calculate the file hash and update
 pub async fn do_full_scan(pool: &sqlx::SqlitePool, path: &PathBuf) -> Result<(), Error> {
     for entry in WalkDir::new(path)
         .into_iter()
