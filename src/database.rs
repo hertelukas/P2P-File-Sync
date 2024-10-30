@@ -161,7 +161,7 @@ mod tests {
         sqlx::query(
             r#"
 INSERT INTO files (path, local_hash, local_last_modified, global_hash, global_last_modified, global_peer)
-VALUES ("/old", "aa", 12, "bb", 12, "0"),
+VALUES ("/old", "aa", 12, "bb", 14, "0"),
 ("/new", "aa", 100, "aa", 100, "0")
 "#,
         )
@@ -269,7 +269,7 @@ WHERE path = ?
     }
 
     #[sqlx::test]
-    async fn test_set_local_hash(pool: SqlitePool) {
+    async fn test_do_update_full(pool: SqlitePool) {
         fill_db(&pool).await;
 
         update_if_newer(&pool, 101, "xx".to_owned().into(), &Path::new("/new"))
@@ -278,7 +278,9 @@ WHERE path = ?
 
         let f = get_file(&pool, &Path::new("/new")).await;
         assert_eq!(f.local_hash, Some(b"xx".to_vec()));
+        assert_eq!(f.global_hash, b"xx".to_vec());
         assert_eq!(f.local_last_modified, Some(101));
+        assert_eq!(f.global_last_modified, 101);
     }
 
     #[sqlx::test]
@@ -291,7 +293,9 @@ WHERE path = ?
 
         let f = get_file(&pool, &Path::new("/new")).await;
         assert_eq!(f.local_hash, Some(b"aa".to_vec()));
+        assert_eq!(f.global_hash, b"aa".to_vec());
         assert_eq!(f.local_last_modified, Some(100));
+        assert_eq!(f.global_last_modified, 100);
     }
 
     #[sqlx::test]
@@ -304,6 +308,26 @@ WHERE path = ?
 
         let f = get_file(&pool, &Path::new("/new")).await;
         assert_eq!(f.local_hash, Some(b"aa".to_vec()));
+        assert_eq!(f.global_hash, b"aa".to_vec());
         assert_eq!(f.local_last_modified, Some(100));
+        assert_eq!(f.global_last_modified, 100);
+    }
+
+    #[sqlx::test]
+    async fn test_do_only_update_local(pool: SqlitePool) {
+        fill_db(&pool).await;
+
+        update_if_newer(&pool, 13, "cc".to_owned().into(), &Path::new("/old"))
+            .await
+            .unwrap();
+
+        let f = get_file(&pool, &Path::new("/old")).await;
+
+        assert_eq!(f.local_hash, Some(b"cc".to_vec()));
+        assert_eq!(f.local_last_modified, Some(13));
+        // Global parameters stay the same, as local update is
+        // older than global version
+        assert_eq!(f.global_hash, b"bb".to_vec());
+        assert_eq!(f.global_last_modified, 14);
     }
 }
