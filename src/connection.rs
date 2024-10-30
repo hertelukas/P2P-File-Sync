@@ -96,21 +96,39 @@ impl Connection {
 
                 Ok(Some(frame))
             }
-
             Err(crate::frame::Error::Incomplete) => Ok(None),
+            Err(e) => Err(e.into()),
         }
     }
 
     /// Write a frame to the stream
     async fn write_frame(&mut self, frame: &Frame) -> Result<(), Error> {
         match frame {
-            _ => self.write_value(frame).await?,
+            Frame::DbSync { folder_id } => {
+                self.stream.write_u8(b'.').await?;
+                self.stream.write_all(&folder_id.to_ne_bytes()).await?;
+            }
+            Frame::Yes => {
+                self.stream.write_all(b"+").await?;
+            }
+            Frame::No => {
+                self.stream.write_all(b"-").await?;
+            }
+            Frame::InitiatorGlobal {
+                global_hash,
+                global_last_modified,
+                global_peer,
+            } => {
+                self.stream.write_u8(b'!').await?;
+                self.stream.write_all(&global_hash).await?;
+                self.stream
+                    .write_all(&global_last_modified.to_ne_bytes())
+                    .await?;
+                self.stream.write_all(global_peer.as_bytes()).await?;
+                self.stream.write_all(b"\r\n").await?;
+            }
         };
 
         self.stream.flush().await.map_err(Error::from)
-    }
-
-    async fn write_value(&mut self, frame: &Frame) -> Result<(), Error> {
-        todo!()
     }
 }
