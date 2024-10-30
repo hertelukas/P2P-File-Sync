@@ -66,19 +66,24 @@ impl Peer {
 #[derive(sqlx::FromRow)]
 pub struct File {
     pub path: String,
-    pub local_hash: Vec<u8>,
+    pub local_hash: Option<Vec<u8>>,
+    pub local_last_modified: Option<i64>,
     pub global_hash: Vec<u8>,
-    pub last_modified: i64,
+    pub global_last_modified: i64,
+    pub global_peer: String,
 }
 
 impl File {
+    /// Used to create a local, not-yet tracked file
     pub fn new(hash: Vec<u8>, entry: &DirEntry) -> Self {
         let time = Self::get_last_modified_as_unix(entry);
         File {
             path: entry.path().to_string_lossy().to_string(),
-            local_hash: hash.clone(),
+            local_hash: Some(hash.clone()),
             global_hash: hash,
-            last_modified: time,
+            local_last_modified: Some(time),
+            global_last_modified: time,
+            global_peer: "0".to_owned(),
         }
     }
 

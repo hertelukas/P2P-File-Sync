@@ -55,11 +55,14 @@ WHERE path = ?
     Ok(res.count > 0)
 }
 
+/// Check if `modified` is newer than the last local version we have tracked at `path`
+/// If we only track the file globally - and do not have a local version yet, this
+/// will return true.
 pub async fn is_newer(pool: &sqlx::SqlitePool, modified: i64, path: &Path) -> Result<bool, Error> {
     let s = path.to_string_lossy().to_string();
     let res = sqlx::query!(
         r#"
-SELECT last_modified
+SELECT local_last_modified
 FROM files
 WHERE path = ?
 "#,
@@ -69,9 +72,19 @@ WHERE path = ?
     .await
     .map_err(Error::from)?;
 
-    Ok(modified > res.last_modified)
+    if let Some(local_last_modified) = res.local_last_modified {
+        Ok(modified > local_last_modified)
+    } else {
+        Ok(true)
+    }
 }
 
+/// Updates the state of the tracked file at `path`.
+/// If the modified date is more recent than the last local stored
+/// local modified date, we update the local_hash.
+/// If it is even more recent than the global version, we also update
+/// the global_last_modified and the global_hash to this version, while
+/// setting the global_peer to ourselves.
 pub async fn update_if_newer(
     pool: &sqlx::SqlitePool,
     modified: i64,
@@ -82,8 +95,22 @@ pub async fn update_if_newer(
     sqlx::query!(
         r#"
 UPDATE files
-SET local_hash = ?, last_modified = ?
-WHERE path = ? AND ? > last_modified
+SET local_hash = ?, local_last_modified = ?
+WHERE path = ? AND ? > local_last_modified
+"#,
+        hash,
+        modified,
+        s,
+        modified
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query!(
+        r#"
+UPDATE files
+SET global_hash = ?, global_last_modified = ?, global_peer = "0"
+WHERE path = ? AND ? > global_last_modified
 "#,
         hash,
         modified,
@@ -100,13 +127,15 @@ pub async fn insert(pool: &sqlx::SqlitePool, file: File) -> Result<(), Error> {
     // Insert the record into the files table
     sqlx::query!(
         r#"
-INSERT INTO files (path, local_hash, global_hash, last_modified)
-VALUES (?, ?, ?, ?)
+INSERT INTO files (path, local_hash, local_last_modified, global_hash, global_last_modified, global_peer)
+VALUES (?, ?, ?, ?, ?, ?)
         "#,
         file.path,
         file.local_hash,
+        file.local_last_modified,
         file.global_hash,
-        file.last_modified
+        file.global_last_modified,
+        file.global_peer
     )
     .execute(pool)
     .await?;
@@ -131,9 +160,9 @@ mod tests {
     async fn fill_db(pool: &SqlitePool) {
         sqlx::query(
             r#"
-INSERT INTO files (path, local_hash, global_hash, last_modified)
-VALUES ("/old", "aa", "bb", 12),
-("/new", "aa", "aa", 100)
+INSERT INTO files (path, local_hash, local_last_modified, global_hash, global_last_modified, global_peer)
+VALUES ("/old", "aa", 12, "bb", 12, "0"),
+("/new", "aa", 100, "aa", 100, "0")
 "#,
         )
         .execute(pool)
@@ -210,9 +239,11 @@ WHERE path = ?
 
         let f = File {
             path: "/insert".to_owned(),
-            local_hash: "aa".to_owned().into(),
+            local_hash: Some("aa".to_owned().into()),
+            local_last_modified: Some(0),
             global_hash: "bb".to_owned().into(),
-            last_modified: 0,
+            global_last_modified: 0,
+            global_peer: "0".to_owned(),
         };
 
         insert(&pool, f).await.unwrap();
@@ -227,9 +258,11 @@ WHERE path = ?
 
         let f = File {
             path: "/new".to_owned(),
-            local_hash: "aa".to_owned().into(),
+            local_hash: Some("aa".to_owned().into()),
+            local_last_modified: Some(0),
             global_hash: "bb".to_owned().into(),
-            last_modified: 0,
+            global_last_modified: 0,
+            global_peer: "0".to_owned(),
         };
 
         insert(&pool, f).await.unwrap();
@@ -244,8 +277,8 @@ WHERE path = ?
             .unwrap();
 
         let f = get_file(&pool, &Path::new("/new")).await;
-        assert_eq!(f.local_hash, b"xx".to_vec());
-        assert_eq!(f.last_modified, 101);
+        assert_eq!(f.local_hash, Some(b"xx".to_vec()));
+        assert_eq!(f.local_last_modified, Some(101));
     }
 
     #[sqlx::test]
@@ -257,8 +290,8 @@ WHERE path = ?
             .unwrap();
 
         let f = get_file(&pool, &Path::new("/new")).await;
-        assert_eq!(f.local_hash, b"aa".to_vec());
-        assert_eq!(f.last_modified, 100);
+        assert_eq!(f.local_hash, Some(b"aa".to_vec()));
+        assert_eq!(f.local_last_modified, Some(100));
     }
 
     #[sqlx::test]
@@ -270,8 +303,7 @@ WHERE path = ?
             .unwrap();
 
         let f = get_file(&pool, &Path::new("/new")).await;
-        assert_eq!(f.local_hash, b"aa".to_vec());
-        assert_eq!(f.last_modified, 100);
+        assert_eq!(f.local_hash, Some(b"aa".to_vec()));
+        assert_eq!(f.local_last_modified, Some(100));
     }
-
 }

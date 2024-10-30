@@ -14,14 +14,24 @@
         "type_info": "Blob"
       },
       {
-        "name": "global_hash",
+        "name": "local_last_modified",
         "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "global_hash",
+        "ordinal": 3,
         "type_info": "Blob"
       },
       {
-        "name": "last_modified",
-        "ordinal": 3,
+        "name": "global_last_modified",
+        "ordinal": 4,
         "type_info": "Integer"
+      },
+      {
+        "name": "global_peer",
+        "ordinal": 5,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -29,6 +39,8 @@
     },
     "nullable": [
       false,
+      true,
+      true,
       false,
       false,
       false

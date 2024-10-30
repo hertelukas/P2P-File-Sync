@@ -99,7 +99,7 @@ async fn handle_connection(stream: TcpStream, config: MutexConf) {
 /// This is done by following these steps:
 /// 1. Check if the file is tracked: If not, insert and done.
 /// 2. Check if the file has a newer modified date. If not, done.
-/// 3. Calculate the file hash and update local_hash
+/// 3. Calculate the file hash and update the entry
 pub async fn do_full_scan(pool: &sqlx::SqlitePool, path: &PathBuf) -> Result<(), Error> {
     for entry in WalkDir::new(path)
         .into_iter()

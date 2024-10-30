@@ -23,10 +23,10 @@ path = "/home/user/downloads"
 | Name                | Description                                        | Type               |
 |---------------------+----------------------------------------------------+--------------------|
 | ~path~                | The absolute path of a file                        | ~String~             |
-| ~local_hash~          | The local hash of a file                           | ~String~             |
+| ~local_hash~          | The local hash of a file                           | ~Vec<u8>~            |
 | ~local_last_modified~ | The local last modified date                       | ~u64~ Unix timestamp |
-| ~global_hash~         | The hash of the newest file version in the network | ~String~             |
-| ~global_last_mdofied~ | The global last modfied date                       | ~u64~ Unix timestamp |
+| ~global_hash~         | The hash of the newest file version in the network | ~Vec<u8>~            |
+| ~global_last_mdofied~ | The global last modified date                      | ~u64~ Unix timestamp |
 | ~global_peer~         | The peer with the newest file. ~0~, if peer itself   | ~String~             |
 *** Scan
 Every node keeps a local database with version of all files. On startup, this

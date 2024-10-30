@@ -1,10 +1,10 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT last_modified\nFROM files\nWHERE path = ?\n",
+  "query": "\nSELECT local_last_modified\nFROM files\nWHERE path = ?\n",
   "describe": {
     "columns": [
       {
-        "name": "last_modified",
+        "name": "local_last_modified",
         "ordinal": 0,
         "type_info": "Integer"
       }
@@ -13,8 +13,8 @@
       "Right": 1
     },
     "nullable": [
-      false
+      true
     ]
   },
-  "hash": "31e46bd4b52bb568d351a1103341a58b9689cc8eaf7905377eddd9d2cb3bd36f"
+  "hash": "fa64cc3d4e20caf9ac82c99e126c8948d4bbd9ae8dd8e99cd7d68fc1def97efe"
 }
