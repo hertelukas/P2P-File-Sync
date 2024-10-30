@@ -18,7 +18,7 @@ pub enum Error {
 pub enum Frame {
     // '.'
     DbSync {
-        folder_id: u64,
+        folder_id: u32,
     },
     // '+'
     Yes,
@@ -39,8 +39,8 @@ impl Frame {
         match get_u8(src)? {
             // DbSync
             b'.' => {
-                // Skip 8 bytes folder_id
-                skip(src, 10)
+                // Skip 4 bytes folder_id
+                skip(src, 4)
             }
             // Yes
             b'+' => Ok(()),
@@ -63,7 +63,7 @@ impl Frame {
         match get_u8(src)? {
             // DbSync
             b'.' => {
-                let folder_id: u64 = src.get_u64_ne();
+                let folder_id: u32 = src.get_u32_ne();
                 Ok(Frame::DbSync { folder_id })
             }
             b'+' => Ok(Frame::Yes),

@@ -13,6 +13,7 @@ use walkdir::WalkDir;
 
 use crate::{
     config::Config,
+    connection::Connection,
     database::{insert, is_newer, is_tracked, update_if_newer},
     types::File,
 };
@@ -49,7 +50,7 @@ pub async fn try_connect(config: MutexConf) {
                 log::info!("Connected to {:?}", peer);
                 let config_handle = config.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream, config_handle).await;
+                    handle_connection(stream, config_handle, true).await;
                 });
             }
         }
@@ -67,7 +68,7 @@ pub async fn wait_incoming(config: MutexConf) {
             Ok((stream, _)) => {
                 let config = config.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream, config).await;
+                    handle_connection(stream, config, false).await;
                 });
             }
             Err(e) => log::warn!("Failed to accept connection {}", e),
@@ -75,7 +76,7 @@ pub async fn wait_incoming(config: MutexConf) {
     }
 }
 
-async fn handle_connection(stream: TcpStream, config: MutexConf) {
+async fn handle_connection(stream: TcpStream, config: MutexConf, initiator: bool) {
     let peer_addr = match stream.peer_addr() {
         Ok(addr) => addr,
         Err(e) => {
@@ -91,6 +92,26 @@ async fn handle_connection(stream: TcpStream, config: MutexConf) {
             return;
         }
     };
+    let mut con = Connection::new(stream);
+
+    if initiator {
+        for folder in folders {
+            send_db_state(&mut con, folder).await;
+        }
+    }
+    else {
+        receive_db_state(&mut con).await;
+    }
+}
+
+async fn send_db_state(connection: &mut Connection, folder_id: u32) {
+    match connection.write_frame(&crate::frame::Frame::DbSync { folder_id }).await {
+        _ => log::info!("TODO")
+    }
+}
+
+async fn receive_db_state(connection: &mut Connection) {
+    while let Some(_) = connection.read_frame().await.unwrap() {}
 }
 
 /// Updates the database by recursively iterating over all files in the path.

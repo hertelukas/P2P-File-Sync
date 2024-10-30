@@ -1,6 +1,6 @@
 [[peers]]
 ip = "172.20.0.3" # node 2
-folders = []
+folders = [1]
 
 [[paths]]
 id = 1
