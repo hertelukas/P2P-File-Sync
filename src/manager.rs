@@ -11,14 +11,15 @@ use crate::{database, watcher};
 pub async fn run() -> eyre::Result<()> {
     let config = Arc::new(Mutex::new(Config::get().await?));
     let pool = database::setup().await?;
+    let pool = Arc::new(pool);
 
     let (tx_watch_cmd, rx_watch_cmd) = mpsc::channel(1);
     let (tx_change, mut rx_change) = mpsc::channel(1);
 
-    log::info!("Using config {config:?}");
+    log::info!("Using config {:?}", config.lock().unwrap());
 
     for path in config.lock().unwrap().paths() {
-        let _ = do_full_scan(&pool, path.path()).await?;
+        let _ = do_full_scan(pool.clone(), path.path()).await?;
     }
 
     log::info!("Done scanning!");
@@ -38,13 +39,14 @@ pub async fn run() -> eyre::Result<()> {
         }
     });
 
-
     // Periodically try to connect to the peers
     let connector_config_handle = config.clone();
-    tokio::spawn(try_connect(connector_config_handle));
+    let connector_pool_handle = pool.clone();
+    tokio::spawn(try_connect(connector_pool_handle, connector_config_handle));
     // And listen if someone wants to connect to us
     let listener_config_handle = config.clone();
-    wait_incoming(listener_config_handle).await;
+    let listener_pool_handle = pool.clone();
+    wait_incoming(listener_pool_handle, listener_config_handle).await;
 
     Ok(())
 }
