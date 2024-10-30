@@ -1,0 +1,77 @@
+* P2P File Sync
+
+** Configuration
+The configuration file holds information about the tracked folders and peers.
+The following is an example layout. ~folder.id~ has to be unique and the same
+across devices.
+#+begin_src toml
+[[peers]]
+ip = "172.20.0.3"
+folders = [1]
+
+[[paths]]
+id = 1
+path = "/home/user/documents"
+
+[[paths]]
+id = 2
+path = "/home/user/downloads"
+#+end_src
+
+** Syncing
+*** Database Layout
+| Name                | Description                                        | Type               |
+|---------------------+----------------------------------------------------+--------------------|
+| ~path~                | The absolute path of a file                        | ~String~             |
+| ~local_hash~          | The local hash of a file                           | ~String~             |
+| ~local_last_modified~ | The local last modified date                       | ~u64~ Unix timestamp |
+| ~global_hash~         | The hash of the newest file version in the network | ~String~             |
+| ~global_last_mdofied~ | The global last modfied date                       | ~u64~ Unix timestamp |
+| ~global_peer~         | The peer with the newest file. ~0~, if peer itself   | ~String~             |
+*** Scan
+Every node keeps a local database with version of all files. On startup, this
+database is updated in the following way:
+1. If the entry is not a file, skip
+2. Check if the file is already in the database
+   + If not, enter it, with ~local_hash~ and ~global_hash~ set to its ~Sha256~ hash
+     and the ~local_last_modified~ and ~global_last_modified~ to the last modified
+     property of the file.
+   + If it is, check if it was modified, by looking at the ~local_last_modified~ property
+     - If not, we are done
+     - If it was modified, recalculate and update the ~local_hash~
+       - If the local ~last_modified~ is newer then the ~global_last_modified~, update
+         the ~global_hash~ and the ~global_last_modified~
+*** Connection
+Every connection attempt with peers we share no folder with is immediately
+dropped. Otherwise, for each folder we share, we first check which files
+are out of sync. Generally, only database changes are explicitly "synced",
+the peers have to request file updates based on the state of their database.
+**** Initial Update
+The communication is based on frames, and only updates the database.
+1. The peer initiating the connection sends ~b"sync-db"~, followed by the id.
+2. The peer accepting the connection responds with ~b"accept-db-sync"~, if he
+   actually wants to sync the folder. (Might not be the case, if the peer
+   does not sync this folder)
+3. The initiator sends a relative path, followed by the ~global_hash~, the
+   ~global_last_modified~ and the ~global_peer~.
+4. The responder compares the received ~global_hash~ with the one in his database
+   + If they match, responds with ~b"ok"~
+   + If he does not have the file, he just stores the global information
+   + If no match, the responder compares the ~global_last_modified~ dates
+     - If responders version is older, update database, send ~b"ok"~
+     - If responders version is newer, send ~b"mismatch"~ followed by his ~global_hash~,
+       the ~global_last_modified~, and the ~global_peer~
+       + The receiver updates his database accordingly
+5. If there are more files, repeat with 3.
+**** Watcher Updates
+On watcher updates, we need to propagate the new global state.
+1. Update local database, by replacing all fields of a path with the new version.
+2. For each peer
+   + Check if we have an established connection, if not, done
+   + Send ~b"sync-change"~, followed by the folder id
+   + Responder responds with ~b"accept-db-sync"~, if interested
+   + Initiator sends ~b"global_hash"~ , ~b"global_last_modified"~
+   + Responder responds with ~b"done"~
+**** TODO File updates
+Based on initial updates, or received watcher updates, a file sync
+might be necessary.
