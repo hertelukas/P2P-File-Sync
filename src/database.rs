@@ -18,6 +18,10 @@ pub enum Error {
     MigrateError(#[from] sqlx::migrate::MigrateError),
 }
 
+/// Creates a SQLite connection pool in the data directory. E.g.,
+/// `$XDG_DATA_HOME/p2p_file_sync/db.sqlite` for Linux.
+///
+/// It applies all available migrations and returns the pool on success.
 pub async fn setup() -> Result<Pool<Sqlite>, Error> {
     let db_url = format!("sqlite://{}", get_database_path()?.to_string_lossy());
 
@@ -38,6 +42,7 @@ pub async fn setup() -> Result<Pool<Sqlite>, Error> {
     Ok(pool)
 }
 
+/// Returns, whether the file at `path` is already in our database.
 pub async fn is_tracked(pool: &sqlx::SqlitePool, path: &Path) -> Result<bool, Error> {
     let s = path.to_string_lossy().to_string();
     let res = sqlx::query!(
@@ -123,6 +128,7 @@ WHERE path = ? AND ? > global_last_modified
     Ok(())
 }
 
+/// Inserts the `file` into the database.
 pub async fn insert(pool: &sqlx::SqlitePool, file: File) -> Result<(), Error> {
     // Insert the record into the files table
     sqlx::query!(

@@ -29,13 +29,19 @@ pub enum Error {
     DatabaseError(#[from] crate::database::Error),
 }
 
+/// Helper function which returns the Sha256 of `data`
 fn hash_data(data: Vec<u8>) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(data);
     hasher.finalize().to_vec()
 }
 
-/// Tries to connect to all peers
+/// Tries to connect to all peers. We try to connect to peers
+/// within a fixed interval, in the case that a peer comes online
+/// without trying to connect to us first.
+///
+/// If a connetion is established, a new thread is spawned,
+/// responsible for handling the connection.
 pub async fn try_connect(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
     loop {
         // Create a vector of owned peer copies first, so we do
@@ -60,6 +66,8 @@ pub async fn try_connect(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
     }
 }
 
+/// Listens to new incoming connections. On connection establishment,
+/// it is handled in a new thread.
 pub async fn wait_incoming(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
     let listener = TcpListener::bind("0.0.0.0:3618").await.unwrap();
 
@@ -80,6 +88,11 @@ pub async fn wait_incoming(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
     }
 }
 
+/// Handles newly established connections. If we do not share any
+/// folder with the IP, the connection is dropped.
+///
+/// Otherwise, if `initiator`, we start synchronizing the database.
+/// If not, start listening for synchronization requests.
 async fn handle_connection(
     stream: TcpStream,
     config: MutexConf,
@@ -113,6 +126,9 @@ async fn handle_connection(
     }
 }
 
+/// This function should be called for each folder which should
+/// be synced with `connection`. It updates our and the peers database
+/// in order to share the same global database state for folder `folder_id`
 async fn send_db_state(
     connection: &mut Connection,
     folder_id: u32,
@@ -143,6 +159,8 @@ async fn send_db_state(
     }
 }
 
+/// Waits for folder sync requests. If we are interested in the folders'
+/// global state, we iterate over the file information.
 async fn receive_db_state(
     connection: &mut Connection,
     config: MutexConf,
