@@ -147,7 +147,11 @@ impl Config {
         let ip = ip.into();
         for peer in &self.peers {
             if peer.ip == ip {
-                return Some(peer.folders().clone());
+                // If we do not share any folder, return None
+                if peer.folders().len() > 0 {
+                    return Some(peer.folders().clone());
+                }
+                return None;
             }
         }
         None
@@ -159,6 +163,22 @@ impl Config {
             res.push(peer.ip.clone());
         }
         res
+    }
+
+    /// Returns, whether we share folder `folder_id` with peer `ip`
+    pub fn is_shared_with<T>(&self, ip: T, folder_id: u32) -> bool
+    where
+        T: Into<IpAddr>,
+    {
+        let ip = ip.into();
+        for peer in &self.peers {
+            if peer.ip == ip {
+                if peer.folders().contains(&folder_id) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 

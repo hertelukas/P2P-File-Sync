@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{io::Cursor, net::IpAddr};
 
 use bytes::{Buf, BytesMut};
 use tokio::{
@@ -132,5 +132,9 @@ impl Connection {
         };
 
         self.stream.flush().await.map_err(Error::from)
+    }
+
+    pub fn get_peer_ip(&self) -> Result<IpAddr, Error> {
+        Ok(self.stream.get_ref().peer_addr().map_err(Error::from)?.ip())
     }
 }

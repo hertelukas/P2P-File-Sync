@@ -151,7 +151,25 @@ async fn receive_db_state(
     // Iterate over the folders that the initiator might want to share
     while let Some(frame) = connection.read_frame().await.unwrap() {
         match frame {
-            Frame::DbSync { folder_id } => todo!(),
+            Frame::DbSync { folder_id } => {
+                if config
+                    .lock()
+                    .unwrap()
+                    .is_shared_with(connection.get_peer_ip().unwrap(), folder_id)
+                {
+                    // Accept folder information
+                    let _ = connection.write_frame(&Frame::Yes).await;
+                    while let Some(frame) = connection.read_frame().await.unwrap() {
+                        match frame {
+                            // Handle file info
+                            _ => todo!(),
+                        }
+                    }
+                } else {
+                    // If we do not want this folder information, we expect a new DbSync frame
+                    let _ = connection.write_frame(&Frame::No).await;
+                }
+            }
             _ => {
                 log::warn!("Unexpected frame received while waiting for new folder");
             }
