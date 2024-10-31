@@ -63,7 +63,7 @@ impl Peer {
     }
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct File {
     pub path: String,
     pub local_hash: Option<Vec<u8>>,

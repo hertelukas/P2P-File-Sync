@@ -180,6 +180,15 @@ impl Config {
         }
         false
     }
+
+    pub fn get_path(&self, folder_id: u32) -> Option<PathBuf> {
+        for folder in &self.paths {
+            if folder.id() == folder_id {
+                return Some(folder.path().clone());
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]

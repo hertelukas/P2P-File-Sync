@@ -4,7 +4,9 @@ use std::{
     time::Duration,
 };
 
+use futures::StreamExt;
 use sha2::{Digest, Sha256};
+use sqlx::query_as;
 use tokio::{
     fs::read,
     net::{TcpListener, TcpStream},
@@ -144,7 +146,38 @@ async fn send_db_state(
     // Wait for yes or no
     if let Some(response) = connection.read_frame().await.unwrap() {
         match response {
-            Frame::Yes => todo!(),
+            Frame::Yes => {
+                // Load the path (and hold the lock as short as possible,
+                // because we can't Send it to another await)
+                let path = {
+                    let lock = config.lock().unwrap();
+                    lock.get_path(folder_id)
+                };
+                if let Some(path) = path {
+                    // All files that start with the same folder
+                    let like_pattern = format!("{}%", path.to_string_lossy());
+                    let mut file_stream = query_as!(
+                        File,
+                        r#"
+SELECT *
+FROM files
+WHERE path LIKE ?
+"#,
+                        like_pattern
+                    )
+                    .fetch(&*pool);
+
+                    // Now, we can send our file state
+                    while let Some(file) = file_stream.next().await {
+                        log::info!("Sending file info... {:?}", file);
+                    }
+                } else {
+                    // This should never happen
+                    log::warn!("Tried to sync non-existing folder {folder_id}");
+                    return;
+                }
+                todo!()
+            }
             Frame::No => {
                 log::info!("Peer does not want to sync {folder_id}");
                 return;
@@ -207,6 +240,9 @@ pub async fn do_full_scan(pool: Arc<sqlx::SqlitePool>, path: &PathBuf) -> Result
         .filter(|e| e.metadata().map(|m| m.is_file()).unwrap_or(false))
     {
         // Insert the file in our database, if untracked
+        // TODO maybe this has to be changed, as is_tracked will return true,
+        // even if we only track the global state of the file: We should be inserting
+        // it anyway
         if !is_tracked(&pool, &entry.path()).await? {
             let content = read(entry.path()).await.map_err(Error::from)?;
             log::info!("Tracking {entry:?}");
