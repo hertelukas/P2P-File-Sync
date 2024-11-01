@@ -139,3 +139,49 @@ impl Connection {
         Ok(self.stream.get_ref().peer_addr().map_err(Error::from)?.ip())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::net::TcpListener;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_connection_new() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap(); // Don't care about port
+        let addr = listener.local_addr().unwrap();
+
+        // Client
+        tokio::spawn(async move {
+            let _ = TcpStream::connect(addr).await.unwrap();
+        });
+
+        // Accept as server
+        let (server_socket, _) = listener.accept().await.unwrap();
+
+        let connection = Connection::new(server_socket);
+
+        assert_eq!(connection.buffer.capacity(), 4 * 1024);
+    }
+
+    #[tokio::test]
+    async fn test_frame_transfer() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Client
+        tokio::spawn(async move {
+            let c = TcpStream::connect(addr).await.unwrap();
+            let mut client_connection = Connection::new(c);
+            let _ = client_connection.write_frame(&Frame::Yes).await.unwrap();
+        });
+
+        // Accept as server
+        let (server_socket, _) = listener.accept().await.unwrap();
+
+        let mut connection = Connection::new(server_socket);
+        let frame = connection.read_frame().await.unwrap().unwrap();
+
+        assert!(matches!(frame, Frame::Yes));
+    }
+}
