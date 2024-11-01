@@ -122,3 +122,104 @@ fn get_line<'a>(src: &mut Cursor<&'a [u8]>) -> Result<&'a [u8], Error> {
 
     Err(Error::Incomplete)
 }
+
+#[cfg(test)]
+mod tests {
+    use bytes::{BufMut, BytesMut};
+
+    use super::*;
+
+    #[test]
+    fn test_check_db_sync() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'.');
+        buf.put(&b"\xFF\xFF\xFF\xFF"[..]);
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+    }
+
+    #[test]
+    fn test_parse_db_sync() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'.');
+        buf.put(&b"\xFF\xFF\xFF\xFF"[..]);
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        let frame = Frame::parse(&mut buf).unwrap();
+
+        match frame {
+            Frame::DbSync { folder_id } => assert_eq!(folder_id, 0xFFFFFFFF),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_short_fails() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'.');
+        buf.put(&b"\xFF\xFF\xFF"[..]);
+
+        let mut buf = Cursor::new(&buf[..]);
+        Frame::check(&mut buf).unwrap();
+    }
+
+    #[test]
+    fn test_yes() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'+');
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+        buf.set_position(0);
+        assert!(matches!(Frame::parse(&mut buf).unwrap(), Frame::Yes));
+    }
+
+    #[test]
+    fn test_no() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'-');
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+        buf.set_position(0);
+        assert!(matches!(Frame::parse(&mut buf).unwrap(), Frame::No));
+    }
+
+    #[test]
+    fn test_initiator_global() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'!');
+        // 32 Bytes Sha256
+        buf.extend(std::iter::repeat(b'\x42').take(32));
+        // 8 bytes global last modified
+        buf.extend(std::iter::repeat(b'\x12').take(8));
+        // And the IP of the global peer as String
+        buf.put("127.0.0.1".as_bytes());
+        // and terminate
+        buf.put(&b"\r\n"[..]);
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+        buf.set_position(0);
+        match Frame::parse(&mut buf).unwrap() {
+            Frame::InitiatorGlobal {
+                global_hash,
+                global_last_modified,
+                global_peer,
+            } => {
+                let bytes = Bytes::from(vec![0x42; 32]);
+                assert_eq!(global_hash, bytes);
+                assert_eq!(global_last_modified, 0x1212121212121212);
+                assert_eq!(global_peer, "127.0.0.1");
+            }
+            _ => assert!(false),
+        }
+    }
+}
