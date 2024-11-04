@@ -105,10 +105,11 @@ impl File {
 
         match file_path.strip_prefix(base_path) {
             Ok(relative) => Some(relative.to_path_buf()),
-            Err(_) => None
+            Err(_) => None,
         }
     }
 
+    /// Appends the `relative_path` to the `base`.
     pub fn get_full_path(base: &str, relative_path: &str) -> PathBuf {
         let base_path = Path::new(base);
         let file_path = Path::new(relative_path);

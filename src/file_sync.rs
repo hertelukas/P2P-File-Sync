@@ -281,25 +281,24 @@ WHERE path = ?
 
                                     if let Ok(res) = res {
                                         // Need to update our database
-                                        if res.global_hash != global_hash {
+                                        if res.global_hash != global_hash
+                                            && res.global_last_modified < global_last_modified
+                                        {
                                             log::info!("We need to update {full_path}");
-                                            // Check if we need to update our database
-                                            if res.global_last_modified < global_last_modified {
-                                                sqlx::query!(
-                                                    r#"
+                                            sqlx::query!(
+                                                r#"
 UPDATE files
 SET global_hash = ?, global_last_modified = ?, global_peer = ?
 WHERE path = ?
 "#,
-                                                    hash_as_vec,
-                                                    global_last_modified,
-                                                    peer_addr,
-                                                    full_path
-                                                )
-                                                .execute(&*pool)
-                                                .await
-                                                .unwrap();
-                                            }
+                                                hash_as_vec,
+                                                global_last_modified,
+                                                peer_addr,
+                                                full_path
+                                            )
+                                            .execute(&*pool)
+                                            .await
+                                            .unwrap();
                                         }
                                     }
                                     // Need to insert file
