@@ -2,3 +2,6 @@
 
 # sqlx database
 test.sqlite
+
+/docker/node1_sync
+/docker/node2_sync
