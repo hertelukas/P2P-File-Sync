@@ -48,21 +48,22 @@ are out of sync. Generally, only database changes are explicitly "synced",
 the peers have to request file updates based on the state of their database.
 **** Initial Update
 The communication is based on frames, and only updates the database.
-1. The peer initiating the connection sends ~b"sync-db"~, followed by the id.
-2. The peer accepting the connection responds with ~b"accept-db-sync"~, if he
-   actually wants to sync the folder. (Might not be the case, if the peer
-   does not sync this folder)
-3. The initiator sends a relative path, followed by the ~global_hash~, the
-   ~global_last_modified~ and the ~global_peer~.
+1. The peer initiating the connection sends ~DbSync~, including the folder id.
+2. The peer accepting the connection responds with ~Yes~, if he actually wants
+   to sync the folder. (Might not be the case, if the peer does not sync
+   this folder)
+3. The initiator sends ~InitiatorGlobal~, containing the relative path, the ~global_hash~,
+   the ~global_last_modified~ and the ~global_peer~.
 4. The responder compares the received ~global_hash~ with the one in his database
-   + If they match, responds with ~b"ok"~
+   + If they match, do nothing
    + If he does not have the file, he just stores the global information
    + If no match, the responder compares the ~global_last_modified~ dates
-     - If responders version is older, update database, send ~b"ok"~
-     - If responders version is newer, send ~b"mismatch"~ followed by his ~global_hash~,
-       the ~global_last_modified~, and the ~global_peer~
-       + The receiver updates his database accordingly
-5. If there are more files, repeat with 3.
+     - If responders version is older, update database
+     - If responders version is newer, we handle this case in the second pass
+5. The responder sends ~Yes~ to signal that he is ready to receive the next file
+   information.
+6. If there are more files, repeat with 3.
+7. If not, initiator sends ~Done~ and begin with 1., but with exchanged roles.
 **** Watcher Updates
 On watcher updates, we need to propagate the new global state.
 1. Update local database, by replacing all fields of a path with the new version.
