@@ -27,8 +27,9 @@ pub enum Frame {
     // '!'
     InitiatorGlobal {
         global_hash: Bytes,
-        global_last_modified: u64,
+        global_last_modified: i64,
         global_peer: String,
+        path: String,
     },
 }
 
@@ -48,8 +49,9 @@ impl Frame {
             b'-' => Ok(()),
             // InitiatorGlobal
             b'!' => {
-                // Sha256 (32) + last_modified (8) + string
+                // Sha256 (32) + last_modified (8) + string + string
                 skip(src, 40)?;
+                get_line(src)?;
                 get_line(src)?;
                 Ok(())
             }
@@ -71,13 +73,16 @@ impl Frame {
             b'!' => {
                 let global_hash = Bytes::copy_from_slice(&src.chunk()[..32]);
                 skip(src, 32)?;
-                let global_last_modified = src.get_u64_ne();
+                let global_last_modified = src.get_i64_ne();
                 let line = get_line(src)?.to_vec();
                 let global_peer = String::from_utf8(line)?;
+                let line = get_line(src)?.to_vec();
+                let path = String::from_utf8(line)?;
                 Ok(Frame::InitiatorGlobal {
                     global_hash,
                     global_last_modified,
                     global_peer,
+                    path,
                 })
             }
             _ => {
@@ -203,6 +208,10 @@ mod tests {
         buf.put("127.0.0.1".as_bytes());
         // and terminate
         buf.put(&b"\r\n"[..]);
+        // And the path as String
+        buf.put("folder/file".as_bytes());
+        // and terminate
+        buf.put(&b"\r\n"[..]);
 
         let mut buf = Cursor::new(&buf[..]);
 
@@ -213,11 +222,13 @@ mod tests {
                 global_hash,
                 global_last_modified,
                 global_peer,
+                path,
             } => {
                 let bytes = Bytes::from(vec![0x42; 32]);
                 assert_eq!(global_hash, bytes);
                 assert_eq!(global_last_modified, 0x1212121212121212);
                 assert_eq!(global_peer, "127.0.0.1");
+                assert_eq!(path, "folder/file");
             }
             _ => assert!(false),
         }

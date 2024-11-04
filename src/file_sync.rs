@@ -112,7 +112,10 @@ async fn handle_connection(
     let folders = match config.lock().unwrap().shared_folders(peer_addr.ip()) {
         Some(ids) => ids,
         None => {
-            log::info!("Not sharing any folder with {:?}. Dropping connection", peer_addr.ip());
+            log::info!(
+                "Not sharing any folder with {:?}. Dropping connection",
+                peer_addr.ip()
+            );
             return;
         }
     };
@@ -168,15 +171,36 @@ WHERE path LIKE ?
                     .fetch(&*pool);
 
                     // Now, we can send our file state
-                    while let Some(file) = file_stream.next().await {
-                        log::info!("Sending file info... {:?}", file);
+                    while let Some(Ok(file)) = file_stream.next().await {
+                        if let Some(relative_path) =
+                            File::get_relative_path(&path.to_string_lossy(), &file.path)
+                        {
+                            let file_frame = Frame::InitiatorGlobal {
+                                global_hash: file.global_hash.into(),
+                                global_last_modified: file.global_last_modified,
+                                global_peer: file.global_peer,
+                                path: relative_path.to_string_lossy().to_string(),
+                            };
+                            connection.write_frame(&file_frame).await.unwrap();
+                        } else {
+                            log::warn!("Failed to convert path to a relative path, skipping");
+                        }
+
+                        // Check if we can continue or if we get an update
+                        if let Some(response) = connection.read_frame().await.unwrap() {
+                            match response {
+                                Frame::Yes => (),
+                                _ => log::warn!(
+                                    "Unexpected packet received after sending file state"
+                                ),
+                            }
+                        }
                     }
                 } else {
                     // This should never happen
                     log::warn!("Tried to sync non-existing folder {folder_id}");
                     return;
                 }
-                todo!()
             }
             Frame::No => {
                 log::info!("Peer does not want to sync {folder_id}");
@@ -210,11 +234,56 @@ async fn receive_db_state(
                 {
                     // Accept folder information
                     let _ = connection.write_frame(&Frame::Yes).await;
-                    while let Some(frame) = connection.read_frame().await.unwrap() {
-                        match frame {
-                            // Handle file info
-                            _ => todo!(),
+                    let base_path = {
+                        let lock = config.lock().unwrap();
+                        lock.get_path(folder_id)
+                    };
+                    if let Some(base_path) = base_path {
+                        while let Some(frame) = connection.read_frame().await.unwrap() {
+                            match frame {
+                                Frame::InitiatorGlobal {
+                                    global_hash,
+                                    global_last_modified,
+                                    global_peer,
+                                    path,
+                                } => {
+                                    let full_path =
+                                        File::get_full_path(&base_path.to_string_lossy(), &path)
+                                            .to_string_lossy()
+                                            .to_string();
+
+                                    let res = sqlx::query!(
+                                        r#"
+SELECT global_hash
+FROM files
+WHERE path = ?
+"#,
+                                        full_path
+                                    )
+                                    .fetch_one(&*pool)
+                                    .await;
+
+                                    if let Ok(res) = res {
+                                        if res.global_hash == global_hash {
+                                            connection.write_frame(&Frame::Yes).await.unwrap();
+                                        } else {
+                                            // TODO check if we need a newer version or need to update or db
+                                            todo!()
+                                        }
+                                    }
+                                    // TODO maybe test for RowNotFound
+                                    else {
+                                        log::info!("We are not yet tracking {full_path}");
+                                    }
+                                }
+                                _ => log::warn!(
+                                "Unexpected packet received while waiting for new file information"
+                            ),
+                            }
                         }
+                    } else {
+                        // Should never happen
+                        log::warn!("Tried to sync non-exisitng folder {folder_id}");
                     }
                 } else {
                     // If we do not want this folder information, we expect a new DbSync frame
@@ -226,6 +295,7 @@ async fn receive_db_state(
             }
         }
     }
+    // TODO think about how to keep track of files which are not in the peers' db
 }
 
 /// Updates the database by recursively iterating over all files in the path.

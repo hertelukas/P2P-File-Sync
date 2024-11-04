@@ -120,6 +120,7 @@ impl Connection {
                 global_hash,
                 global_last_modified,
                 global_peer,
+                path
             } => {
                 self.stream.write_u8(b'!').await?;
                 self.stream.write_all(&global_hash).await?;
@@ -127,6 +128,8 @@ impl Connection {
                     .write_all(&global_last_modified.to_ne_bytes())
                     .await?;
                 self.stream.write_all(global_peer.as_bytes()).await?;
+                self.stream.write_all(b"\r\n").await?;
+                self.stream.write_all(path.as_bytes()).await?;
                 self.stream.write_all(b"\r\n").await?;
             }
         };

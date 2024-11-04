@@ -96,4 +96,23 @@ impl File {
             .map(|duration| duration.as_secs() as i64)
             .unwrap_or(0)
     }
+
+    /// Turns the `full_path` at a relative path of `base` and returns `Some(relative_path)`
+    /// on success. None, otherwise, e.g., when `full_path` is not a prefix of `base`.
+    pub fn get_relative_path(base: &str, full_path: &str) -> Option<PathBuf> {
+        let base_path = Path::new(base);
+        let file_path = Path::new(full_path);
+
+        match file_path.strip_prefix(base_path) {
+            Ok(relative) => Some(relative.to_path_buf()),
+            Err(_) => None
+        }
+    }
+
+    pub fn get_full_path(base: &str, relative_path: &str) -> PathBuf {
+        let base_path = Path::new(base);
+        let file_path = Path::new(relative_path);
+
+        base_path.join(file_path)
+    }
 }
