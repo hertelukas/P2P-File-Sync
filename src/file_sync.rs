@@ -112,7 +112,7 @@ async fn handle_connection(
     let folders = match config.lock().unwrap().shared_folders(peer_addr.ip()) {
         Some(ids) => ids,
         None => {
-            log::info!("Not sharing any folder with this peer. Dropping connection");
+            log::info!("Not sharing any folder with {:?}. Dropping connection", peer_addr.ip());
             return;
         }
     };
