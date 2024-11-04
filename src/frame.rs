@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use bytes::{Buf, Bytes};
 use std::string::FromUtf8Error;
@@ -24,6 +24,8 @@ pub enum Frame {
     Yes,
     // '-'
     No,
+    // *
+    Done,
     // '!'
     InitiatorGlobal {
         global_hash: Bytes,
@@ -47,6 +49,8 @@ impl Frame {
             b'+' => Ok(()),
             // No
             b'-' => Ok(()),
+            // Done
+            b'*' => Ok(()),
             // InitiatorGlobal
             b'!' => {
                 // Sha256 (32) + last_modified (8) + string + string
@@ -70,6 +74,7 @@ impl Frame {
             }
             b'+' => Ok(Frame::Yes),
             b'-' => Ok(Frame::No),
+            b'*' => Ok(Frame::Done),
             b'!' => {
                 let global_hash = Bytes::copy_from_slice(&src.chunk()[..32]);
                 skip(src, 32)?;
@@ -194,6 +199,18 @@ mod tests {
         Frame::check(&mut buf).unwrap();
         buf.set_position(0);
         assert!(matches!(Frame::parse(&mut buf).unwrap(), Frame::No));
+    }
+
+    #[test]
+    fn test_done() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'*');
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+        buf.set_position(0);
+        assert!(matches!(Frame::parse(&mut buf).unwrap(), Frame::Done));
     }
 
     #[test]

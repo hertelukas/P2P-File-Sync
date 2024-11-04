@@ -122,14 +122,22 @@ async fn handle_connection(
     let mut connection = Connection::new(stream);
 
     if initiator {
+        // Send folder info first
         for folder in folders {
             send_db_state(&mut connection, folder, config.clone(), pool.clone()).await;
+            connection.write_frame(&Frame::Done).await.unwrap();
         }
-        // TODO send that we do not want to share any more folders
+        connection.write_frame(&Frame::Done).await.unwrap();
+        // and then receive updates
+        receive_db_state(&mut connection, config.clone(), pool.clone()).await;
     } else {
         receive_db_state(&mut connection, config.clone(), pool.clone()).await;
+        for folder in folders {
+            send_db_state(&mut connection, folder, config.clone(), pool.clone()).await;
+            connection.write_frame(&Frame::Done).await.unwrap();
+        }
+        connection.write_frame(&Frame::Done).await.unwrap();
     }
-    // TODO now the other way around
 }
 
 /// This function should be called for each folder which should
@@ -209,7 +217,8 @@ WHERE path LIKE ?
             }
             _ => {
                 log::warn!(
-                    "Unexpected packet received while waiting if peer is interested in folder"
+                    "Unexpected frame {:?} received while waiting if peer is interested in folder",
+                    response
                 );
                 return;
             }
@@ -313,6 +322,10 @@ VALUES (?, ?, ?, ?)
                                     // And wait for the next file
                                     connection.write_frame(&Frame::Yes).await.unwrap();
                                 }
+                                Frame::Done => {
+                                    log::info!("Received information for all files");
+                                    break;
+                                }
                                 _ => log::warn!(
                                 "Unexpected packet received while waiting for new file information"
                             ),
@@ -327,12 +340,18 @@ VALUES (?, ?, ?, ?)
                     let _ = connection.write_frame(&Frame::No).await;
                 }
             }
+            Frame::Done => {
+                log::info!("Received all folder information from peer");
+                return;
+            }
             _ => {
-                log::warn!("Unexpected frame received while waiting for new folder");
+                log::warn!(
+                    "Unexpected frame {:?} received while waiting for new folder",
+                    frame
+                );
             }
         }
     }
-    // TODO think about how to keep track of files which are not in the peers' db
 }
 
 /// Updates the database by recursively iterating over all files in the path.

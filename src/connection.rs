@@ -116,11 +116,14 @@ impl Connection {
             Frame::No => {
                 self.stream.write_all(b"-").await?;
             }
+            Frame::Done => {
+                self.stream.write_all(b"*").await?;
+            }
             Frame::InitiatorGlobal {
                 global_hash,
                 global_last_modified,
                 global_peer,
-                path
+                path,
             } => {
                 self.stream.write_u8(b'!').await?;
                 self.stream.write_all(&global_hash).await?;
