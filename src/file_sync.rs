@@ -129,6 +129,7 @@ async fn handle_connection(
     } else {
         receive_db_state(&mut connection, config.clone(), pool.clone()).await;
     }
+    // TODO now the other way around
 }
 
 /// This function should be called for each folder which should
@@ -186,7 +187,7 @@ WHERE path LIKE ?
                             log::warn!("Failed to convert path to a relative path, skipping");
                         }
 
-                        // Check if we can continue or if we get an update
+                        // Check if we can continue
                         if let Some(response) = connection.read_frame().await.unwrap() {
                             match response {
                                 Frame::Yes => (),
@@ -251,10 +252,16 @@ async fn receive_db_state(
                                         File::get_full_path(&base_path.to_string_lossy(), &path)
                                             .to_string_lossy()
                                             .to_string();
+                                    let peer_addr = if global_peer == "0" {
+                                        connection.get_peer_ip().unwrap().to_string()
+                                    } else {
+                                        global_peer
+                                    };
 
+                                    let hash_as_vec: Vec<u8> = global_hash.clone().into();
                                     let res = sqlx::query!(
                                         r#"
-SELECT global_hash
+SELECT global_last_modified, global_hash
 FROM files
 WHERE path = ?
 "#,
@@ -264,17 +271,47 @@ WHERE path = ?
                                     .await;
 
                                     if let Ok(res) = res {
-                                        if res.global_hash == global_hash {
-                                            connection.write_frame(&Frame::Yes).await.unwrap();
-                                        } else {
-                                            // TODO check if we need a newer version or need to update or db
-                                            todo!()
+                                        // Need to update our database
+                                        if res.global_hash != global_hash {
+                                            log::info!("We need to update {full_path}");
+                                            // Check if we need to update our database
+                                            if res.global_last_modified < global_last_modified {
+                                                sqlx::query!(
+                                                    r#"
+UPDATE files
+SET global_hash = ?, global_last_modified = ?, global_peer = ?
+WHERE path = ?
+"#,
+                                                    hash_as_vec,
+                                                    global_last_modified,
+                                                    peer_addr,
+                                                    full_path
+                                                )
+                                                .execute(&*pool)
+                                                .await
+                                                .unwrap();
+                                            }
                                         }
                                     }
-                                    // TODO maybe test for RowNotFound
+                                    // Need to insert file
                                     else {
                                         log::info!("We are not yet tracking {full_path}");
+                                        sqlx::query!(
+                                            r#"
+INSERT INTO files (path, global_hash, global_last_modified, global_peer)
+VALUES (?, ?, ?, ?)
+"#,
+                                            full_path,
+                                            hash_as_vec,
+                                            global_last_modified,
+                                            peer_addr
+                                        )
+                                        .execute(&*pool)
+                                        .await
+                                        .unwrap();
                                     }
+                                    // And wait for the next file
+                                    connection.write_frame(&Frame::Yes).await.unwrap();
                                 }
                                 _ => log::warn!(
                                 "Unexpected packet received while waiting for new file information"

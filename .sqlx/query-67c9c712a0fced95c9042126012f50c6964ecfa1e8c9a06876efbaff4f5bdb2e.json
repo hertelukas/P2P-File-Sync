@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT global_last_modified, global_hash\nFROM files\nWHERE path = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "global_last_modified",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "global_hash",
+        "ordinal": 1,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "67c9c712a0fced95c9042126012f50c6964ecfa1e8c9a06876efbaff4f5bdb2e"
+}
