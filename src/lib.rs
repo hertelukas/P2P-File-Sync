@@ -1,6 +1,7 @@
 mod watcher;
 mod config;
 mod types;
+mod server;
 
 mod connection;
 pub use connection::Connection;

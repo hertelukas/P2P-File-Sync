@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::config::Config;
 use crate::file_sync::{do_full_scan, listen_file_sync, sync_files, try_connect, wait_incoming};
+use crate::server::app;
 use crate::{database, watcher};
 
 pub async fn run() -> eyre::Result<()> {
@@ -66,12 +68,14 @@ pub async fn run() -> eyre::Result<()> {
     let listener_config_handle = config.clone();
     let listener_pool_handle = pool.clone();
     let listener_sync_cmd_handle = tx_sync_cmd.clone();
-    wait_incoming(
+    tokio::spawn(wait_incoming(
         listener_pool_handle,
         listener_config_handle,
         listener_sync_cmd_handle,
-    )
-    .await;
+    ));
+
+    let listener = TcpListener::bind("0.0.0.0:3617").await.unwrap();
+    axum::serve(listener, app()).await.unwrap();
 
     Ok(())
 }
