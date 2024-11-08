@@ -135,8 +135,17 @@ impl Connection {
                 self.stream.write_all(path.as_bytes()).await?;
                 self.stream.write_all(b"\r\n").await?;
             }
-            Frame::RequestFile { folder_id, path } => todo!(),
-            Frame::File { size, data } => todo!(),
+            Frame::RequestFile { folder_id, path } => {
+                self.stream.write_u8(b'?').await?;
+                self.stream.write_all(&folder_id.to_le_bytes()).await?;
+                self.stream.write_all(path.as_bytes()).await?;
+                self.stream.write_all(b"\r\n").await?;
+            }
+            Frame::File { size, data } => {
+                self.stream.write_u8(b'=').await?;
+                self.stream.write_all(&size.to_le_bytes()).await?;
+                self.stream.write_all(&data).await?;
+            }
         };
 
         self.stream.flush().await.map_err(Error::from)
