@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::{Arc, Mutex}};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use crate::{config::Config, types::WatchedFolder};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};

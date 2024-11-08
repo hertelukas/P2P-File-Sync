@@ -25,7 +25,7 @@ pub enum Error {
     SerializeError(#[from] toml::ser::Error),
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Config {
     paths: Vec<WatchedFolder>,
     peers: Vec<Peer>,

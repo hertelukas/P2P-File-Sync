@@ -1487,6 +1487,7 @@ dependencies = [
  "rand 0.8.5",
  "ratatui",
  "serde",
+ "serde_json",
  "sha2",
  "sqlx",
  "thiserror",

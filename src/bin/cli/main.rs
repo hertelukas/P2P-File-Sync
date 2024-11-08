@@ -1,12 +1,16 @@
 use app::{App, CurrentScreen};
-use ui::ui;
 use env_logger::Env;
 use ratatui::{
-    crossterm::{event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode}, execute, terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}},
+    crossterm::{
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    },
     prelude::{Backend, CrosstermBackend},
     Terminal,
 };
 use std::io;
+use ui::ui;
 
 extern crate p2p_file_sync;
 
@@ -32,7 +36,11 @@ fn main() -> eyre::Result<()> {
 
     //restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     Ok(())

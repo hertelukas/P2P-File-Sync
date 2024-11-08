@@ -74,8 +74,11 @@ pub async fn run() -> eyre::Result<()> {
         listener_sync_cmd_handle,
     ));
 
+    let server_config_handle = config.clone();
     let listener = TcpListener::bind("0.0.0.0:3617").await.unwrap();
-    axum::serve(listener, app()).await.unwrap();
+    axum::serve(listener, app(server_config_handle))
+        .await
+        .unwrap();
 
     Ok(())
 }

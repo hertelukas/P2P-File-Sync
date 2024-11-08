@@ -2,7 +2,7 @@
 
 /// Used to switch the
 pub enum CurrentScreen {
-    Main
+    Main,
 }
 
 pub struct App {

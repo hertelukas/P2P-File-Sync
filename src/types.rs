@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use walkdir::DirEntry;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct WatchedFolder {
     id: u32,
     path: PathBuf,
@@ -37,7 +37,7 @@ impl fmt::Display for WatchedFolder {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Peer {
     pub ip: IpAddr,
     folders: Vec<u32>,
