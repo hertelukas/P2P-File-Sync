@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT global_last_modified, global_hash\nFROM files\nWHERE path = ?\n",
+  "query": "\nSELECT global_last_modified, global_hash\nFROM files\nWHERE folder_id = ? AND path = ?\n",
   "describe": {
     "columns": [
       {
@@ -15,12 +15,12 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false,
       false
     ]
   },
-  "hash": "67c9c712a0fced95c9042126012f50c6964ecfa1e8c9a06876efbaff4f5bdb2e"
+  "hash": "ee08f17b9a3036124c5d206ce252d05b2fb064272063f662bd7a05b096c3736f"
 }

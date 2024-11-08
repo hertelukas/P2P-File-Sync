@@ -1,4 +1,5 @@
 use std::{
+    fs,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
@@ -283,8 +284,9 @@ async fn receive_db_state(
                                         r#"
 SELECT global_last_modified, global_hash
 FROM files
-WHERE path = ?
+WHERE folder_id = ? AND path = ?
 "#,
+                                        folder_id,
                                         full_path
                                     )
                                     .fetch_one(&*pool)
@@ -300,11 +302,12 @@ WHERE path = ?
                                                 r#"
 UPDATE files
 SET global_hash = ?, global_last_modified = ?, global_peer = ?
-WHERE path = ?
+WHERE folder_id = ? AND path = ?
 "#,
                                                 hash_as_vec,
                                                 global_last_modified,
                                                 peer_addr,
+                                                folder_id,
                                                 full_path
                                             )
                                             .execute(&*pool)
@@ -317,9 +320,10 @@ WHERE path = ?
                                         log::info!("We are not yet tracking {full_path}");
                                         sqlx::query!(
                                             r#"
-INSERT INTO files (path, global_hash, global_last_modified, global_peer)
-VALUES (?, ?, ?, ?)
+INSERT INTO files (folder_id, path, global_hash, global_last_modified, global_peer)
+VALUES (?, ?, ?, ?, ?)
 "#,
+                                            folder_id,
                                             full_path,
                                             hash_as_vec,
                                             global_last_modified,
@@ -391,17 +395,77 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
             }
 
             // TODO We currently do a connection for each file, maybe improve
+            // Maybe a bit inefficient if the peer is offline
             if let Ok(stream) = TcpStream::connect((file.global_peer.clone(), 3619)).await {
                 log::info!("Connected to {:?} for file sync", file.global_peer);
 
                 let mut connection = Connection::new(stream);
+                connection
+                    .write_frame(&Frame::RequestFile {
+                        folder_id: file.folder_id.try_into().unwrap(),
+                        path: file.path,
+                    })
+                    .await
+                    .unwrap();
+
+                if let Some(frame) = connection.read_frame().await.unwrap() {
+                    match frame {
+                        Frame::File { size, data } => {
+                            log::info!("Received file with {size} bytes");
+                        }
+                        _ => log::warn!(
+                            "Unexpected frame {:?} received while waiting for file request",
+                            frame
+                        ),
+                    }
+                }
             }
         }
     }
 }
 
-pub async fn listen_file_sync() {
+pub async fn listen_file_sync(config: MutexConf) {
     let listener = TcpListener::bind("0.0.0.0:3619").await.unwrap();
+
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
+                let config = config.clone();
+                tokio::spawn(async move {
+                    let mut connection = Connection::new(stream);
+                    if let Some(frame) = connection.read_frame().await.unwrap() {
+                        match frame {
+                            Frame::RequestFile { folder_id, path } => {
+                                let base_path = {
+                                    let lock = config.lock().unwrap();
+                                    lock.get_path(folder_id)
+                                };
+                                if let Some(base_path) = base_path {
+                                    let path =
+                                        File::get_full_path(&base_path.to_string_lossy(), &path);
+
+                                    // TODO handle read failure
+                                    let data = fs::read(path).unwrap();
+                                    connection
+                                        .write_frame(&Frame::File {
+                                            size: data.len().try_into().unwrap(),
+                                            data: data.into(),
+                                        })
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+                            _ => log::warn!(
+                                "Unexpected frame {:?} received while waiting for file request",
+                                frame
+                            ),
+                        }
+                    }
+                });
+            }
+            Err(e) => log::warn!("Failed to accept connection {}", e),
+        }
+    }
 }
 
 /// Updates the database by recursively iterating over all files in the path.

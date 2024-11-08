@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::config::Config;
-use crate::file_sync::{do_full_scan, sync_files, try_connect, wait_incoming};
+use crate::file_sync::{do_full_scan, listen_file_sync, sync_files, try_connect, wait_incoming};
 use crate::{database, watcher};
 
 pub async fn run() -> eyre::Result<()> {
@@ -43,6 +43,10 @@ pub async fn run() -> eyre::Result<()> {
     // Start trying to sync outdated files
     let syncer_pool_handle = pool.clone();
     tokio::spawn(sync_files(syncer_pool_handle, rx_sync_cmd));
+
+    // And accept sync requests
+    let listen_sync_mutex_handle = config.clone();
+    tokio::spawn(listen_file_sync(listen_sync_mutex_handle));
 
     // Periodically try to connect to the peers
     let connector_config_handle = config.clone();
