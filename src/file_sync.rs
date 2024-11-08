@@ -368,7 +368,7 @@ VALUES (?, ?, ?, ?, ?)
     }
 }
 
-pub async fn sync_files(pool: Arc<sqlx::SqlitePool>, mut rx: Receiver<()>) {
+pub async fn sync_files(pool: Arc<sqlx::SqlitePool>, config: MutexConf, mut rx: Receiver<()>) {
     loop {
         // Block on waiting for some change that motivates us to sync
         rx.recv().await;
@@ -403,15 +403,23 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
                 connection
                     .write_frame(&Frame::RequestFile {
                         folder_id: file.folder_id.try_into().unwrap(),
-                        path: file.path,
+                        path: file.path.clone(),
                     })
                     .await
                     .unwrap();
 
                 if let Some(frame) = connection.read_frame().await.unwrap() {
                     match frame {
-                        Frame::File { size, data } => {
-                            log::info!("Received file with {size} bytes");
+                        Frame::File { size: _, data } => {
+                            let base_path = {
+                                let lock = config.lock().unwrap();
+                                lock.get_path(file.folder_id.try_into().unwrap())
+                            };
+                            if let Some(base_path) = base_path {
+                                let path =
+                                    File::get_full_path(&base_path.to_string_lossy(), &file.path);
+                                fs::write(path, data).unwrap();
+                            }
                         }
                         _ => log::warn!(
                             "Unexpected frame {:?} received while waiting for file request",

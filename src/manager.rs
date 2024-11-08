@@ -41,8 +41,13 @@ pub async fn run() -> eyre::Result<()> {
     });
 
     // Start trying to sync outdated files
+    let syncer_config_handle = config.clone();
     let syncer_pool_handle = pool.clone();
-    tokio::spawn(sync_files(syncer_pool_handle, rx_sync_cmd));
+    tokio::spawn(sync_files(
+        syncer_pool_handle,
+        syncer_config_handle,
+        rx_sync_cmd,
+    ));
 
     // And accept sync requests
     let listen_sync_mutex_handle = config.clone();
