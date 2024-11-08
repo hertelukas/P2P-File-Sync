@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::config::Config;
-use crate::file_sync::{do_full_scan, try_connect, wait_incoming};
+use crate::file_sync::{do_full_scan, sync_files, try_connect, wait_incoming};
 use crate::{database, watcher};
 
 pub async fn run() -> eyre::Result<()> {
@@ -15,6 +15,7 @@ pub async fn run() -> eyre::Result<()> {
 
     let (tx_watch_cmd, rx_watch_cmd) = mpsc::channel(1);
     let (tx_change, mut rx_change) = mpsc::channel(1);
+    let (tx_sync_cmd, rx_sync_cmd) = mpsc::channel(1);
 
     log::info!("Using config {:?}", config.lock().unwrap());
 
@@ -39,14 +40,29 @@ pub async fn run() -> eyre::Result<()> {
         }
     });
 
+    // Start trying to sync outdated files
+    let syncer_pool_handle = pool.clone();
+    tokio::spawn(sync_files(syncer_pool_handle, rx_sync_cmd));
+
     // Periodically try to connect to the peers
     let connector_config_handle = config.clone();
     let connector_pool_handle = pool.clone();
-    tokio::spawn(try_connect(connector_pool_handle, connector_config_handle));
+    let connector_sync_cmd_handle = tx_sync_cmd.clone();
+    tokio::spawn(try_connect(
+        connector_pool_handle,
+        connector_config_handle,
+        connector_sync_cmd_handle,
+    ));
     // And listen if someone wants to connect to us
     let listener_config_handle = config.clone();
     let listener_pool_handle = pool.clone();
-    wait_incoming(listener_pool_handle, listener_config_handle).await;
+    let listener_sync_cmd_handle = tx_sync_cmd.clone();
+    wait_incoming(
+        listener_pool_handle,
+        listener_config_handle,
+        listener_sync_cmd_handle,
+    )
+    .await;
 
     Ok(())
 }

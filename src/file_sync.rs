@@ -10,6 +10,7 @@ use sqlx::query_as;
 use tokio::{
     fs::read,
     net::{TcpListener, TcpStream},
+    sync::mpsc::{Receiver, Sender},
 };
 use walkdir::WalkDir;
 
@@ -44,7 +45,7 @@ fn hash_data(data: Vec<u8>) -> Vec<u8> {
 ///
 /// If a connetion is established, a new thread is spawned,
 /// responsible for handling the connection.
-pub async fn try_connect(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
+pub async fn try_connect(pool: Arc<sqlx::SqlitePool>, config: MutexConf, tx_sync_cmd: Sender<()>) {
     loop {
         // Create a vector of owned peer copies first, so we do
         // not have to hold the lock over the await of connect
@@ -59,8 +60,9 @@ pub async fn try_connect(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
                 log::info!("Connected to {:?}", peer);
                 let config_handle = config.clone();
                 let pool_handle = pool.clone();
+                let tx_handle = tx_sync_cmd.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream, config_handle, pool_handle, true).await;
+                    handle_connection(stream, config_handle, pool_handle, true, tx_handle).await;
                 });
             }
         }
@@ -70,7 +72,11 @@ pub async fn try_connect(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
 
 /// Listens to new incoming connections. On connection establishment,
 /// it is handled in a new thread.
-pub async fn wait_incoming(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
+pub async fn wait_incoming(
+    pool: Arc<sqlx::SqlitePool>,
+    config: MutexConf,
+    tx_sync_cmd: Sender<()>,
+) {
     let listener = TcpListener::bind("0.0.0.0:3618").await.unwrap();
 
     log::info!("Listening on {:?}", listener.local_addr());
@@ -80,9 +86,10 @@ pub async fn wait_incoming(pool: Arc<sqlx::SqlitePool>, config: MutexConf) {
             Ok((stream, _)) => {
                 let config = config.clone();
                 let pool = pool.clone();
+                let tx_handle = tx_sync_cmd.clone();
 
                 tokio::spawn(async move {
-                    handle_connection(stream, config, pool, false).await;
+                    handle_connection(stream, config, pool, false, tx_handle).await;
                 });
             }
             Err(e) => log::warn!("Failed to accept connection {}", e),
@@ -100,6 +107,7 @@ async fn handle_connection(
     config: MutexConf,
     pool: Arc<sqlx::SqlitePool>,
     initiator: bool,
+    tx_sync_cmd: Sender<()>,
 ) {
     let peer_addr = match stream.peer_addr() {
         Ok(addr) => addr,
@@ -138,6 +146,8 @@ async fn handle_connection(
         }
         connection.write_frame(&Frame::Done).await.unwrap();
     }
+    // Notify our syncer
+    tx_sync_cmd.send(()).await.unwrap();
 }
 
 /// This function should be called for each folder which should
@@ -348,6 +358,35 @@ VALUES (?, ?, ?, ?)
                     "Unexpected frame {:?} received while waiting for new folder",
                     frame
                 );
+            }
+        }
+    }
+}
+
+pub async fn sync_files(pool: Arc<sqlx::SqlitePool>, mut rx: Receiver<()>) {
+    loop {
+        // Block on waiting for some change that motivates us to sync
+        rx.recv().await;
+        log::info!("Starting file sync...");
+
+        let mut file_stream = sqlx::query_as!(
+            File,
+            r#"
+SELECT *
+FROM files
+WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
+"#
+        )
+        .fetch(&*pool);
+
+        while let Some(Ok(file)) = file_stream.next().await {
+            log::info!("Trying to sync {:?}", file);
+            // We should never have a newer local file where
+            // we do not own the global state
+            if let Some(local_last_modified) = file.local_last_modified {
+                if local_last_modified > file.global_last_modified {
+                    log::error!("Encountered file with inconsistent state: {:?}", file);
+                }
             }
         }
     }

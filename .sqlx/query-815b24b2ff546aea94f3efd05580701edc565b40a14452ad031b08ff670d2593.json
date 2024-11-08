@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT *\nFROM files\nWHERE (global_hash <> local_hash) OR (local_hash IS NULL)\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "path",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "local_hash",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "local_last_modified",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "global_hash",
+        "ordinal": 3,
+        "type_info": "Blob"
+      },
+      {
+        "name": "global_last_modified",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "global_peer",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "815b24b2ff546aea94f3efd05580701edc565b40a14452ad031b08ff670d2593"
+}
