@@ -33,6 +33,16 @@ pub enum Frame {
         global_peer: String,
         path: String,
     },
+    // ?
+    RequestFile {
+        folder_id: u32,
+        path: String,
+    },
+    // =
+    File {
+        size: i64,
+        data: Bytes,
+    },
 }
 
 impl Frame {
@@ -59,6 +69,16 @@ impl Frame {
                 get_line(src)?;
                 Ok(())
             }
+            b'?' => {
+                // Skip 4 bytes folder_id
+                skip(src, 4)?;
+                get_line(src)?;
+                Ok(())
+            }
+            b'=' => {
+                let size: i64 = src.get_i64_le();
+                skip(src, size.try_into().unwrap())
+            }
             _ => {
                 unimplemented!()
             }
@@ -69,7 +89,7 @@ impl Frame {
         match get_u8(src)? {
             // DbSync
             b'.' => {
-                let folder_id: u32 = src.get_u32_ne();
+                let folder_id: u32 = src.get_u32_le();
                 Ok(Frame::DbSync { folder_id })
             }
             b'+' => Ok(Frame::Yes),
@@ -78,7 +98,7 @@ impl Frame {
             b'!' => {
                 let global_hash = Bytes::copy_from_slice(&src.chunk()[..32]);
                 skip(src, 32)?;
-                let global_last_modified = src.get_i64_ne();
+                let global_last_modified = src.get_i64_le();
                 let line = get_line(src)?.to_vec();
                 let global_peer = String::from_utf8(line)?;
                 let line = get_line(src)?.to_vec();
@@ -89,6 +109,17 @@ impl Frame {
                     global_peer,
                     path,
                 })
+            }
+            b'?' => {
+                let folder_id: u32 = src.get_u32_le();
+                let line = get_line(src)?.to_vec();
+                let path = String::from_utf8(line)?;
+                Ok(Frame::RequestFile { folder_id, path })
+            }
+            b'=' => {
+                let size: i64 = src.get_i64_le();
+                let data = Bytes::copy_from_slice(&src.chunk()[..size.try_into().unwrap()]);
+                Ok(Frame::File { size, data })
             }
             _ => {
                 unimplemented!()
@@ -250,4 +281,67 @@ mod tests {
             _ => assert!(false),
         }
     }
+
+    #[test]
+    fn test_request_file() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'?');
+        // Folder_id
+        buf.put(&b"\xFF\xFF\xFF\xFF"[..]);
+        // Path
+        buf.put("folder/file".as_bytes());
+        // and terminate
+        buf.put(&b"\r\n"[..]);
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+        buf.set_position(0);
+        match Frame::parse(&mut buf).unwrap() {
+            Frame::RequestFile { folder_id, path } => {
+                assert_eq!(folder_id, 0xFFFFFFFF);
+                assert_eq!(path, "folder/file");
+            }
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn test_file() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'=');
+        // 8 bytes size of 16
+        buf.put(&b"\x10\x00\x00\x00\x00\x00\x00\x00"[..]);
+        // 16 byte file
+        buf.extend(std::iter::repeat(b'\x42').take(16));
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+        buf.set_position(0);
+        match Frame::parse(&mut buf).unwrap() {
+            Frame::File { size, data } => {
+                let bytes = Bytes::from(vec![0x42; 16]);
+                assert_eq!(size, 16);
+                assert_eq!(data, bytes);
+            }
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_short_file() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b'=');
+        // 8 bytes size of 32
+        buf.put(&b"\x20\x00\x00\x00\x00\x00\x00\x00"[..]);
+        // 16 byte file
+        buf.extend(std::iter::repeat(b'\x42').take(16));
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+    }
+
 }

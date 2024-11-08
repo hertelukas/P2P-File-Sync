@@ -108,7 +108,7 @@ impl Connection {
         match frame {
             Frame::DbSync { folder_id } => {
                 self.stream.write_u8(b'.').await?;
-                self.stream.write_all(&folder_id.to_ne_bytes()).await?;
+                self.stream.write_all(&folder_id.to_le_bytes()).await?;
             }
             Frame::Yes => {
                 self.stream.write_all(b"+").await?;
@@ -128,13 +128,15 @@ impl Connection {
                 self.stream.write_u8(b'!').await?;
                 self.stream.write_all(&global_hash).await?;
                 self.stream
-                    .write_all(&global_last_modified.to_ne_bytes())
+                    .write_all(&global_last_modified.to_le_bytes())
                     .await?;
                 self.stream.write_all(global_peer.as_bytes()).await?;
                 self.stream.write_all(b"\r\n").await?;
                 self.stream.write_all(path.as_bytes()).await?;
                 self.stream.write_all(b"\r\n").await?;
             }
+            Frame::RequestFile { folder_id, path } => todo!(),
+            Frame::File { size, data } => todo!(),
         };
 
         self.stream.flush().await.map_err(Error::from)
