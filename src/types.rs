@@ -65,6 +65,7 @@ impl Peer {
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct File {
+    pub folder_id: i64,
     pub path: String,
     pub local_hash: Option<Vec<u8>>,
     pub local_last_modified: Option<i64>,
@@ -75,9 +76,11 @@ pub struct File {
 
 impl File {
     /// Used to create a local, not-yet tracked file
-    pub fn new(hash: Vec<u8>, entry: &DirEntry) -> Self {
+    pub fn new(folder_id: u32, hash: Vec<u8>, entry: &DirEntry) -> Self {
         let time = Self::get_last_modified_as_unix(entry);
         File {
+            // This is necessary, as we use an i64 in the database
+            folder_id: folder_id.into(),
             path: entry.path().to_string_lossy().to_string(),
             local_hash: Some(hash.clone()),
             global_hash: hash,

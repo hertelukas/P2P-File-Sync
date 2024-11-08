@@ -1,43 +1,49 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT *\nFROM files\nWHERE path LIKE ?\n",
+  "query": "\nSELECT *\nFROM files\nWHERE (folder_id = ?) AND (path LIKE ?)\n",
   "describe": {
     "columns": [
       {
-        "name": "path",
+        "name": "folder_id",
         "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "path",
+        "ordinal": 1,
         "type_info": "Text"
       },
       {
         "name": "local_hash",
-        "ordinal": 1,
+        "ordinal": 2,
         "type_info": "Blob"
       },
       {
         "name": "local_last_modified",
-        "ordinal": 2,
+        "ordinal": 3,
         "type_info": "Integer"
       },
       {
         "name": "global_hash",
-        "ordinal": 3,
+        "ordinal": 4,
         "type_info": "Blob"
       },
       {
         "name": "global_last_modified",
-        "ordinal": 4,
+        "ordinal": 5,
         "type_info": "Integer"
       },
       {
         "name": "global_peer",
-        "ordinal": 5,
+        "ordinal": 6,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
+      false,
       false,
       true,
       true,
@@ -46,5 +52,5 @@
       false
     ]
   },
-  "hash": "ee1da7e94a876f73cb9583dc19bc333626d94a9393c289a68c8cda49d28f8f37"
+  "hash": "3a16929fad2aa54eb8b5229d683461169739f0692146ab18835810946d731595"
 }

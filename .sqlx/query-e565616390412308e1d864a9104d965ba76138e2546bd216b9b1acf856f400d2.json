@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO files (folder_id, path, local_hash, local_last_modified, global_hash, global_last_modified, global_peer)\nVALUES (?, ?, ?, ?, ?, ?, ?)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "e565616390412308e1d864a9104d965ba76138e2546bd216b9b1acf856f400d2"
+}

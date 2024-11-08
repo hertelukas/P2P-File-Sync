@@ -133,9 +133,10 @@ pub async fn insert(pool: &sqlx::SqlitePool, file: File) -> Result<(), Error> {
     // Insert the record into the files table
     sqlx::query!(
         r#"
-INSERT INTO files (path, local_hash, local_last_modified, global_hash, global_last_modified, global_peer)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO files (folder_id, path, local_hash, local_last_modified, global_hash, global_last_modified, global_peer)
+VALUES (?, ?, ?, ?, ?, ?, ?)
         "#,
+        file.folder_id,
         file.path,
         file.local_hash,
         file.local_last_modified,
@@ -166,9 +167,9 @@ mod tests {
     async fn fill_db(pool: &SqlitePool) {
         sqlx::query(
             r#"
-INSERT INTO files (path, local_hash, local_last_modified, global_hash, global_last_modified, global_peer)
-VALUES ("/old", "aa", 12, "bb", 14, "0"),
-("/new", "aa", 100, "aa", 100, "0")
+INSERT INTO files (folder_id, path, local_hash, local_last_modified, global_hash, global_last_modified, global_peer)
+VALUES (0, "/old", "aa", 12, "bb", 14, "0"),
+(0, "/new", "aa", 100, "aa", 100, "0")
 "#,
         )
         .execute(pool)
@@ -244,6 +245,7 @@ WHERE path = ?
         fill_db(&pool).await;
 
         let f = File {
+            folder_id: 0,
             path: "/insert".to_owned(),
             local_hash: Some("aa".to_owned().into()),
             local_last_modified: Some(0),
@@ -263,6 +265,7 @@ WHERE path = ?
         fill_db(&pool).await;
 
         let f = File {
+            folder_id: 0,
             path: "/new".to_owned(),
             local_hash: Some("aa".to_owned().into()),
             local_last_modified: Some(0),

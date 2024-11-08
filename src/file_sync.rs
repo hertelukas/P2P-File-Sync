@@ -183,8 +183,9 @@ async fn send_db_state(
                         r#"
 SELECT *
 FROM files
-WHERE path LIKE ?
+WHERE (folder_id = ?) AND (path LIKE ?)
 "#,
+                        folder_id,
                         like_pattern
                     )
                     .fetch(&*pool);
@@ -383,13 +384,24 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
             log::info!("Trying to sync {:?}", file);
             // We should never have a newer local file where
             // we do not own the global state
-            if let Some(local_last_modified) = file.local_last_modified {
-                if local_last_modified > file.global_last_modified {
+            if let Some(local_last_modified) = &file.local_last_modified {
+                if local_last_modified > &file.global_last_modified {
                     log::error!("Encountered file with inconsistent state: {:?}", file);
                 }
             }
+
+            // TODO We currently do a connection for each file, maybe improve
+            if let Ok(stream) = TcpStream::connect((file.global_peer.clone(), 3619)).await {
+                log::info!("Connected to {:?} for file sync", file.global_peer);
+
+                let mut connection = Connection::new(stream);
+            }
         }
     }
+}
+
+pub async fn listen_file_sync() {
+    let listener = TcpListener::bind("0.0.0.0:3619").await.unwrap();
 }
 
 /// Updates the database by recursively iterating over all files in the path.
@@ -397,7 +409,11 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
 /// 1. Check if the file is tracked: If not, insert and done.
 /// 2. Check if the file has a newer modified date. If not, done.
 /// 3. Calculate the file hash and update
-pub async fn do_full_scan(pool: Arc<sqlx::SqlitePool>, path: &PathBuf) -> Result<(), Error> {
+pub async fn do_full_scan(
+    pool: Arc<sqlx::SqlitePool>,
+    path: &PathBuf,
+    folder_id: u32,
+) -> Result<(), Error> {
     for entry in WalkDir::new(path)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -410,7 +426,7 @@ pub async fn do_full_scan(pool: Arc<sqlx::SqlitePool>, path: &PathBuf) -> Result
         if !is_tracked(&pool, &entry.path()).await? {
             let content = read(entry.path()).await.map_err(Error::from)?;
             log::info!("Tracking {entry:?}");
-            let f = File::new(hash_data(content), &entry);
+            let f = File::new(folder_id, hash_data(content), &entry);
             insert(&pool, f).await.map_err(Error::from)?;
         }
         // We are tracking the file already, check for newer version

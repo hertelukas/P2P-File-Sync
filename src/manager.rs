@@ -20,7 +20,7 @@ pub async fn run() -> eyre::Result<()> {
     log::info!("Using config {:?}", config.lock().unwrap());
 
     for path in config.lock().unwrap().paths() {
-        let _ = do_full_scan(pool.clone(), path.path()).await?;
+        let _ = do_full_scan(pool.clone(), path.path(), path.id()).await?;
     }
 
     log::info!("Done scanning!");
