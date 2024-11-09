@@ -1,4 +1,5 @@
 mod config;
+pub use config::Config;
 mod server;
 mod types;
 mod watcher;

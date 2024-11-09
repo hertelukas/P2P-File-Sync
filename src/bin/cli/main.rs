@@ -1,4 +1,4 @@
-use app::{App, CurrentScreen};
+use app::App;
 use env_logger::Env;
 use ratatui::{
     crossterm::{
@@ -17,7 +17,8 @@ extern crate p2p_file_sync;
 mod app;
 mod ui;
 
-fn main() -> eyre::Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     // Use info as default logging level
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     color_eyre::install()?;
@@ -47,6 +48,7 @@ fn main() -> eyre::Result<()> {
 }
 
 fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<(), std::io::Error> {
+    app.fetch_config();
     loop {
         terminal.draw(|f| ui(f, app))?;
 
