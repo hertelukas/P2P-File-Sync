@@ -6,7 +6,7 @@ cargo-build:
   stage: build
   before_script:
     - apt-get update
-    - apt-get install -y curl build-essential
+    - apt-get install -y curl build-essential pkg-config
     - curl https://sh.rustup.rs -sSf | sh -s -- -y
     - source $HOME/.cargo/env
     - cargo install sqlx-cli --no-default-features --features sqlite,openssl-vendored
@@ -20,7 +20,7 @@ cargo-test:
   stage: test
   before_script:
     - apt-get update
-    - apt-get install -y curl build-essential
+    - apt-get install -y curl build-essential pkg-config
     - curl https://sh.rustup.rs -sSf | sh -s -- -y
     - source $HOME/.cargo/env
     - cargo install sqlx-cli --no-default-features --features sqlite,openssl-vendored
