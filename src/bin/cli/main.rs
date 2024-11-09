@@ -23,27 +23,42 @@ async fn main() -> eyre::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     color_eyre::install()?;
 
-    // Setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    init_panic_hook();
 
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    // Setup terminal
+    let mut terminal = init_tui()?;
     terminal.clear()?;
 
     let mut app = App::new();
     let _ = run(&mut terminal, &mut app);
 
     //restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    restore_tui()?;
     terminal.show_cursor()?;
 
+    Ok(())
+}
+
+/// Overwrits the default panic hook by first
+/// trying to restore our terminal
+fn init_panic_hook() {
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // Ignore errors, as we are already panicing
+        let _ = restore_tui();
+        original_hook(panic_info);
+    }));
+}
+
+fn init_tui() -> io::Result<Terminal<impl Backend>> {
+    enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+    Terminal::new(CrosstermBackend::new(io::stdout()))
+}
+
+fn restore_tui() -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
 }
 
