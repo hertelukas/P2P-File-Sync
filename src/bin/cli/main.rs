@@ -56,12 +56,29 @@ fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<(), std:
                 continue;
             }
 
-            match app.current_screen {
-                CurrentScreen::Main => match key.code {
-                    KeyCode::Char('q') => {
-                        return Ok(());
-                    }
-                    _ => {}
+            match app.current_mode {
+                app::CurrentMode::Insert => match app.current_screen {
+                    _ => match key.code {
+                        KeyCode::Esc => {
+                            app.normal_mode();
+                        }
+                        _ => {}
+                    },
+                },
+                app::CurrentMode::Normal => match app.current_screen {
+                    // Keys that have the same effect on each screen
+                    _ => match key.code {
+                        KeyCode::Tab => {
+                            app.toggle_focus();
+                        }
+                        KeyCode::Char('q') => {
+                            return Ok(());
+                        }
+                        KeyCode::Char('i') => {
+                            app.insert_mode();
+                        }
+                        _ => {}
+                    },
                 },
             }
         }
