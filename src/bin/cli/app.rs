@@ -5,6 +5,7 @@ use p2p_file_sync::Config;
 use tokio::task;
 
 /// Used to switch the screen
+#[derive(Clone)]
 pub enum CurrentScreen {
     Main,
     Loading,
@@ -19,7 +20,7 @@ pub enum CurrentMode {
 
 /// Which object we are currently editing
 pub enum CurrentFocus {
-    File,
+    Folder,
     Peer,
 }
 
@@ -28,6 +29,8 @@ pub struct App {
     pub current_mode: CurrentMode,
     pub current_focus: CurrentFocus,
     pub config: Arc<Mutex<Option<Config>>>,
+    pub selected_folder: Option<usize>,
+    pub selected_peer: Option<usize>,
 }
 
 impl App {
@@ -35,8 +38,10 @@ impl App {
         App {
             current_screen: Arc::new(Mutex::new(CurrentScreen::Main)),
             current_mode: CurrentMode::Normal,
-            current_focus: CurrentFocus::File,
+            current_focus: CurrentFocus::Folder,
             config: Arc::new(Mutex::new(None)),
+            selected_folder: None,
+            selected_peer: None,
         }
     }
 
@@ -50,8 +55,87 @@ impl App {
 
     pub fn toggle_focus(&mut self) {
         match &self.current_focus {
-            CurrentFocus::File => self.current_focus = CurrentFocus::Peer,
-            CurrentFocus::Peer => self.current_focus = CurrentFocus::File,
+            CurrentFocus::Folder => self.current_focus = CurrentFocus::Peer,
+            CurrentFocus::Peer => self.current_focus = CurrentFocus::Folder,
+        }
+    }
+
+    /// Selects the next folder downwards (so the next larger index)
+    pub fn select_folder_down(&mut self) {
+        let n = self.number_folders();
+
+        // If no folders, set to None
+        if n == 0 {
+            self.selected_folder = None;
+        } else {
+            if let Some(current) = self.selected_folder {
+                self.selected_folder = Some((current + 1) % n);
+            } else {
+                self.selected_folder = Some(0);
+            }
+        }
+    }
+
+    pub fn select_folder_up(&mut self) {
+        let n = self.number_folders();
+
+        // If no folders, set to None
+        if n == 0 {
+            self.selected_folder = None;
+        } else {
+            if let Some(current) = self.selected_folder {
+                self.selected_folder = Some(((current + n) - 1) % n); // + n to avoid underflow
+            } else {
+                self.selected_folder = Some(n - 1);
+            }
+        }
+    }
+
+    pub fn select_peer_down(&mut self) {
+        let n = self.number_peers();
+
+        // If no folders, set to None
+        if n == 0 {
+            self.selected_peer = None;
+        } else {
+            if let Some(current) = self.selected_peer {
+                self.selected_peer = Some((current + 1) % n);
+            } else {
+                self.selected_peer = Some(0);
+            }
+        }
+    }
+
+    pub fn select_peer_up(&mut self) {
+        let n = self.number_peers();
+
+        // If no folders, set to None
+        if n == 0 {
+            self.selected_peer = None;
+        } else {
+            if let Some(current) = self.selected_peer {
+                self.selected_peer = Some(((current + n) - 1) % n); // + n to avoid underflow
+            } else {
+                self.selected_peer = Some(n - 1);
+            }
+        }
+    }
+
+    fn number_folders(&mut self) -> usize {
+        let lock = self.config.lock().unwrap();
+        if let Some(ref config) = *lock {
+            config.paths().len()
+        } else {
+            0
+        }
+    }
+
+    fn number_peers(&mut self) -> usize {
+        let lock = self.config.lock().unwrap();
+        if let Some(ref config) = *lock {
+            config.peers().len()
+        } else {
+            0
         }
     }
 

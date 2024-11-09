@@ -56,11 +56,20 @@ fn folders_block(app: &App) -> impl Widget {
     let mut list_items = Vec::<ListItem>::new();
 
     if let Some(config) = app.config.lock().unwrap().clone() {
+        let mut i = 0;
         for folder in config.paths() {
             list_items.push(ListItem::new(Line::from(Span::styled(
                 format!("{}", folder),
-                Style::default(),
+                app.selected_folder
+                    .map_or(Style::default(), |selected_folder| {
+                        if selected_folder == i {
+                            Style::default().bg(Color::DarkGray)
+                        } else {
+                            Style::default()
+                        }
+                    }),
             ))));
+            i += 1;
         }
     }
 
@@ -71,7 +80,7 @@ fn folders_block(app: &App) -> impl Widget {
             .title_top(Line::from("| Folders |").centered())
             .title_style(Style::default().bold())
             .style(Style::default().fg(match app.current_focus {
-                crate::app::CurrentFocus::File => Color::Blue,
+                crate::app::CurrentFocus::Folder => Color::Blue,
                 _ => Color::default(),
             }))
             .title_bottom(match app.current_mode {
@@ -85,6 +94,7 @@ fn peers_block(app: &App) -> impl Widget {
     let mut list_items = Vec::<ListItem>::new();
 
     if let Some(config) = app.config.lock().unwrap().clone() {
+        let mut j = 0;
         for peer in config.peers() {
             let lines: Vec<Line> = format!("{}", peer)
                 .lines()
@@ -96,9 +106,21 @@ fn peers_block(app: &App) -> impl Widget {
                         Line::from(Span::raw(format!("- {}", line)))
                     }
                 })
+                .map(|line| {
+                    if let Some(selected_peer) = app.selected_peer {
+                        if selected_peer == j {
+                            line.bg(Color::DarkGray)
+                        } else {
+                            line
+                        }
+                    } else {
+                        line
+                    }
+                })
                 .collect();
 
             list_items.push(ListItem::new(lines));
+            j += 1;
         }
     }
 

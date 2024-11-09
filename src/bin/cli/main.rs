@@ -73,29 +73,54 @@ fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<(), std:
                 continue;
             }
 
+            // Move the current screen outside of the lock
+            let current_screen = {
+                let lock = app.current_screen.lock().unwrap();
+                (*lock).clone()
+            };
+
+            // Only mode dependent keys
             match app.current_mode {
-                app::CurrentMode::Insert => match app.current_screen {
-                    _ => match key.code {
-                        KeyCode::Esc => {
-                            app.normal_mode();
-                        }
-                        _ => {}
-                    },
+                app::CurrentMode::Insert => match key.code {
+                    KeyCode::Esc => {
+                        app.normal_mode();
+                    }
+                    _ => {}
                 },
-                app::CurrentMode::Normal => match app.current_screen {
-                    // Keys that have the same effect on each screen
-                    _ => match key.code {
-                        KeyCode::Tab => {
-                            app.toggle_focus();
-                        }
-                        KeyCode::Char('q') => {
-                            return Ok(());
-                        }
-                        KeyCode::Char('i') => {
-                            app.insert_mode();
-                        }
+                app::CurrentMode::Normal => match key.code {
+                    KeyCode::Tab => {
+                        app.toggle_focus();
+                    }
+                    KeyCode::Char('q') => {
+                        return Ok(());
+                    }
+                    KeyCode::Char('i') => {
+                        app.insert_mode();
+                    }
+                    _ => {}
+                },
+            }
+
+            // Keys depending on mode and screen
+            match app.current_mode {
+                app::CurrentMode::Normal => match current_screen {
+                    app::CurrentScreen::Main => match key.code {
+                        KeyCode::Char('j') => match app.current_focus {
+                            app::CurrentFocus::Folder => app.select_folder_down(),
+                            app::CurrentFocus::Peer => app.select_peer_down(),
+                        },
+                        KeyCode::Char('k') => match app.current_focus {
+                            app::CurrentFocus::Folder => app.select_folder_up(),
+                            app::CurrentFocus::Peer => app.select_peer_up(),
+                        },
                         _ => {}
                     },
+                    _ => {}
+                },
+                app::CurrentMode::Insert => match current_screen {
+                    app::CurrentScreen::Main => {}
+                    // Keys that have the same effect on each screen
+                    _ => {}
                 },
             }
         }
