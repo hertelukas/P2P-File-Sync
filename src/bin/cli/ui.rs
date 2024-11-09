@@ -58,17 +58,18 @@ fn folders_block(app: &App) -> impl Widget {
     if let Some(config) = app.config.lock().unwrap().clone() {
         let mut i = 0;
         for folder in config.paths() {
-            list_items.push(ListItem::new(Line::from(Span::styled(
-                format!("{}", folder),
-                app.selected_folder
-                    .map_or(Style::default(), |selected_folder| {
+            list_items.push(ListItem::new(
+                Line::from(Span::raw(format!("{}", folder))).bg(app.selected_folder.map_or(
+                    Color::default(),
+                    |selected_folder| {
                         if selected_folder == i {
-                            Style::default().bg(Color::DarkGray)
+                            Color::DarkGray
                         } else {
-                            Style::default()
+                            Color::default()
                         }
-                    }),
-            ))));
+                    },
+                )),
+            ));
             i += 1;
         }
     }
