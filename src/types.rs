@@ -33,7 +33,7 @@ impl WatchedFolder {
 
 impl fmt::Display for WatchedFolder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.id, self.path.to_str().unwrap())
+        write!(f, "{:#10x} : {}", self.id, self.path.to_str().unwrap())
     }
 }
 
@@ -60,6 +60,19 @@ impl Peer {
 
     pub fn share_folder(&mut self, id: u32) {
         self.folders.push(id);
+    }
+}
+
+impl fmt::Display for Peer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.ip)?;
+        if self.folders.len() > 0 {
+            writeln!(f, "")?;
+        }
+        for id in &self.folders {
+            writeln!(f, "{:#10x}", id)?;
+        }
+        Ok(())
     }
 }
 

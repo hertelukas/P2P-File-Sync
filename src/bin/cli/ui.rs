@@ -1,8 +1,8 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
-    text::{Line, Text},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Widget, Wrap},
     Frame,
 };
 
@@ -14,30 +14,8 @@ pub fn ui(frame: &mut Frame, app: &App) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(frame.area());
 
-    let folders_block = Block::bordered()
-        .borders(Borders::ALL)
-        .title_top(Line::from("| Folders |").centered())
-        .title_style(Style::default().bold())
-        .style(Style::default().fg(match app.current_focus {
-            crate::app::CurrentFocus::File => Color::Blue,
-            _ => Color::default(),
-        }))
-        .title_bottom(match app.current_mode {
-            crate::app::CurrentMode::Insert => " I ",
-            crate::app::CurrentMode::Normal => " N ",
-        });
-
-    let peers_block = Block::bordered()
-        .borders(Borders::ALL)
-        .title_top(Line::from("| Peers |").centered())
-        .title_style(Style::default().bold())
-        .style(Style::default().fg(match app.current_focus {
-            crate::app::CurrentFocus::Peer => Color::Blue,
-            _ => Color::default(),
-        }));
-
-    frame.render_widget(folders_block, chunks[0]);
-    frame.render_widget(peers_block, chunks[1]);
+    frame.render_widget(folders_block(app), chunks[0]);
+    frame.render_widget(peers_block(app), chunks[1]);
 
     // Potentially show loading "popup"
     if let CurrentScreen::Loading = *app.current_screen.lock().unwrap() {
@@ -72,6 +50,69 @@ pub fn ui(frame: &mut Frame, app: &App) {
         let area = centered_rect(50, 50, frame.area());
         frame.render_widget(error_paragraph, area);
     }
+}
+
+fn folders_block(app: &App) -> impl Widget {
+    let mut list_items = Vec::<ListItem>::new();
+
+    if let Some(config) = app.config.lock().unwrap().clone() {
+        for folder in config.paths() {
+            list_items.push(ListItem::new(Line::from(Span::styled(
+                format!("{}", folder),
+                Style::default(),
+            ))));
+        }
+    }
+
+    let list = List::new(list_items);
+    list.block(
+        Block::bordered()
+            .borders(Borders::ALL)
+            .title_top(Line::from("| Folders |").centered())
+            .title_style(Style::default().bold())
+            .style(Style::default().fg(match app.current_focus {
+                crate::app::CurrentFocus::File => Color::Blue,
+                _ => Color::default(),
+            }))
+            .title_bottom(match app.current_mode {
+                crate::app::CurrentMode::Insert => " I ",
+                crate::app::CurrentMode::Normal => " N ",
+            }),
+    )
+}
+
+fn peers_block(app: &App) -> impl Widget {
+    let mut list_items = Vec::<ListItem>::new();
+
+    if let Some(config) = app.config.lock().unwrap().clone() {
+        for peer in config.peers() {
+            let lines: Vec<Line> = format!("{}", peer)
+                .lines()
+                .enumerate()
+                .map(|(i, line)| {
+                    if i == 0 {
+                        Line::from(Span::styled(line.to_string(), Style::default().bold()))
+                    } else {
+                        Line::from(Span::raw(format!("- {}", line)))
+                    }
+                })
+                .collect();
+
+            list_items.push(ListItem::new(lines));
+        }
+    }
+
+    let list = List::new(list_items);
+    list.block(
+        Block::bordered()
+            .borders(Borders::ALL)
+            .title_top(Line::from("| Peers |").centered())
+            .title_style(Style::default().bold())
+            .style(Style::default().fg(match app.current_focus {
+                crate::app::CurrentFocus::Peer => Color::Blue,
+                _ => Color::default(),
+            })),
+    )
 }
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`

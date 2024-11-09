@@ -139,6 +139,10 @@ impl Config {
         &self.paths
     }
 
+    pub fn peers(&self) -> &Vec<Peer> {
+        &self.peers
+    }
+
     /// Returns the id's of the folders, shared with the peer
     pub fn shared_folders<T>(&self, ip: T) -> Option<Vec<u32>>
     where
