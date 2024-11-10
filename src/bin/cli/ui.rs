@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Widget, Wrap},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Widget, Wrap},
     Frame,
 };
 
@@ -21,23 +21,13 @@ pub fn ui(frame: &mut Frame, app: &App) {
             frame.render_widget(peers_block(app), chunks[1]);
         }
         CurrentScreen::Loading => {
-            // Clear the drawn window
-            frame.render_widget(Clear, frame.area());
-
-            let popup_block = Block::default()
-                .title_top(Line::from("| Loading... |").centered())
-                .borders(Borders::ALL)
-                .style(Style::default());
+            let popup_block = create_popup_block(app, "Loading".to_string(), false);
 
             let area = centered_rect(50, 50, frame.area());
             frame.render_widget(popup_block, area);
         }
         CurrentScreen::Error(ref msg) => {
-            frame.render_widget(Clear, frame.area());
-
-            let popup_block = Block::default()
-                .title_top(Line::from("| Error |").centered())
-                .borders(Borders::ALL)
+            let popup_block = create_popup_block(app, "Error".to_string(), false)
                 .style(Style::default().fg(Color::Red));
 
             let error_text = Text::styled(msg, Style::default().fg(Color::default()));
@@ -50,18 +40,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
             frame.render_widget(error_paragraph, area);
         }
         CurrentScreen::EditFolder(ref watched_folder) => {
-            // Clear the window
-            frame.render_widget(Clear, frame.area());
-
-            let popup_block = Block::default()
-                .title_top(Line::from("| Edit Folder |").centered())
-                .borders(Borders::ALL)
-                .style(Style::default())
-                .title_bottom(match app.current_mode {
-                    crate::app::CurrentMode::Insert => " I ",
-                    crate::app::CurrentMode::Normal => " N ",
-                });
-
+            let popup_block = create_popup_block(app, "Edit Folder".to_string(), true);
             let folder_text = Text::styled(
                 watched_folder.path().to_string_lossy(),
                 Style::default().fg(Color::default()),
@@ -75,17 +54,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
             frame.render_widget(folder_paragraph, area);
         }
         CurrentScreen::EditPeer(ref peer) => {
-            // Clear the window
-            frame.render_widget(Clear, frame.area());
-
-            let popup_block = Block::default()
-                .title_top(Line::from("| Edit Peer |").centered())
-                .borders(Borders::ALL)
-                .style(Style::default())
-                .title_bottom(match app.current_mode {
-                    crate::app::CurrentMode::Insert => " I ",
-                    crate::app::CurrentMode::Normal => " N ",
-                });
+            let popup_block = create_popup_block(app, "Edit Peer".to_string(), true);
 
             let folder_text = Text::styled(
                 format!("{}", peer.ip),
@@ -99,6 +68,33 @@ pub fn ui(frame: &mut Frame, app: &App) {
             let area = centered_rect(50, 50, frame.area());
             frame.render_widget(folder_paragraph, area);
         }
+        CurrentScreen::CreateFolder => {
+            let popup_block = create_popup_block(app, "Create Folder".to_string(), true);
+
+            let area = centered_rect(50, 50, frame.area());
+            frame.render_widget(popup_block, area);
+        }
+        CurrentScreen::CreatePeer => {
+            let popup_block = create_popup_block(app, "Create Peer".to_string(), true);
+
+            let area = centered_rect(50, 50, frame.area());
+            frame.render_widget(popup_block, area);
+        }
+    }
+}
+
+fn create_popup_block(app: &App, title: String, show_mode: bool) -> Block {
+    let block = Block::default()
+        .title_top(Line::from(format!("| {} |", title)).centered())
+        .borders(Borders::ALL);
+
+    if show_mode {
+        block.title_bottom(match app.current_mode {
+            crate::app::CurrentMode::Insert => " I ",
+            crate::app::CurrentMode::Normal => " N ",
+        })
+    } else {
+        block
     }
 }
 

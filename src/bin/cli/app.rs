@@ -12,6 +12,8 @@ pub enum CurrentScreen {
     Error(String),
     EditFolder(WatchedFolder),
     EditPeer(Peer),
+    CreateFolder,
+    CreatePeer,
 }
 
 /// More or less vim modes
@@ -77,8 +79,7 @@ impl App {
             };
 
             // Now, update our folder
-            let mut screen_lock = self.current_screen.lock().unwrap();
-            *screen_lock = CurrentScreen::EditFolder(folder);
+            self.set_screen(CurrentScreen::EditFolder(folder));
         }
     }
 
@@ -97,8 +98,7 @@ impl App {
             };
 
             // Now, update our folder
-            let mut screen_lock = self.current_screen.lock().unwrap();
-            *screen_lock = CurrentScreen::EditPeer(peer);
+            self.set_screen(CurrentScreen::EditPeer(peer));
         }
     }
 
@@ -163,6 +163,14 @@ impl App {
         }
     }
 
+    pub fn open_create_folder(&mut self) {
+        self.set_screen(CurrentScreen::CreateFolder);
+    }
+
+    pub fn open_create_peer(&mut self) {
+        self.set_screen(CurrentScreen::CreatePeer);
+    }
+
     fn number_folders(&mut self) -> usize {
         let lock = self.config.lock().unwrap();
         if let Some(ref config) = *lock {
@@ -181,11 +189,13 @@ impl App {
         }
     }
 
+    fn set_screen(&mut self, screen: CurrentScreen) {
+        let mut screen_lock = self.current_screen.lock().unwrap();
+        *screen_lock = screen;
+    }
+
     pub fn fetch_config(&mut self) {
-        {
-            let mut screen_lock = self.current_screen.lock().unwrap();
-            *screen_lock = CurrentScreen::Loading;
-        }
+        self.set_screen(CurrentScreen::Loading);
 
         let config_handle = Arc::clone(&self.config);
         let screen_handle = Arc::clone(&self.current_screen);

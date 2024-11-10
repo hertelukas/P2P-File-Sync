@@ -117,6 +117,10 @@ fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<(), std:
                             app::CurrentFocus::Folder => app.edit_selected_folder(),
                             app::CurrentFocus::Peer => app.edit_selected_peer(),
                         },
+                        KeyCode::Char('o') => match app.current_focus {
+                            app::CurrentFocus::Folder => app.open_create_folder(),
+                            app::CurrentFocus::Peer => app.open_create_peer(),
+                        },
                         _ => {}
                     },
                     _ => {}
