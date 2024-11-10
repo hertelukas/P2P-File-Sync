@@ -14,41 +14,91 @@ pub fn ui(frame: &mut Frame, app: &App) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(frame.area());
 
-    frame.render_widget(folders_block(app), chunks[0]);
-    frame.render_widget(peers_block(app), chunks[1]);
+    // Potentially show popups
+    match *app.current_screen.lock().unwrap() {
+        CurrentScreen::Main => {
+            frame.render_widget(folders_block(app), chunks[0]);
+            frame.render_widget(peers_block(app), chunks[1]);
+        }
+        CurrentScreen::Loading => {
+            // Clear the drawn window
+            frame.render_widget(Clear, frame.area());
 
-    // Potentially show loading "popup"
-    if let CurrentScreen::Loading = *app.current_screen.lock().unwrap() {
-        // Clear the drawn window
-        frame.render_widget(Clear, frame.area());
+            let popup_block = Block::default()
+                .title_top(Line::from("| Loading... |").centered())
+                .borders(Borders::ALL)
+                .style(Style::default());
 
-        let popup_block = Block::default()
-            .title_top(Line::from("| Loading... |").centered())
-            .borders(Borders::ALL)
-            .style(Style::default());
+            let area = centered_rect(50, 50, frame.area());
+            frame.render_widget(popup_block, area);
+        }
+        CurrentScreen::Error(ref msg) => {
+            frame.render_widget(Clear, frame.area());
 
-        let area = centered_rect(50, 50, frame.area());
-        frame.render_widget(popup_block, area);
-    }
+            let popup_block = Block::default()
+                .title_top(Line::from("| Error |").centered())
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Red));
 
-    // Potentially show loading popup
-    if let CurrentScreen::Error(ref msg) = *app.current_screen.lock().unwrap() {
-        // Clear the drawn window
-        frame.render_widget(Clear, frame.area());
+            let error_text = Text::styled(msg, Style::default().fg(Color::default()));
+            let error_paragraph = Paragraph::new(error_text)
+                .block(popup_block)
+                .alignment(ratatui::layout::Alignment::Center)
+                .wrap(Wrap { trim: false }); // Do not cut off whn over edge
 
-        let popup_block = Block::default()
-            .title_top(Line::from("| Error |").centered())
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Red));
+            let area = centered_rect(50, 50, frame.area());
+            frame.render_widget(error_paragraph, area);
+        }
+        CurrentScreen::EditFolder(ref watched_folder) => {
+            // Clear the window
+            frame.render_widget(Clear, frame.area());
 
-        let error_text = Text::styled(msg, Style::default().fg(Color::default()));
-        let error_paragraph = Paragraph::new(error_text)
-            .block(popup_block)
-            .alignment(ratatui::layout::Alignment::Center)
-            .wrap(Wrap { trim: false }); // Do not cut off whn over edge
+            let popup_block = Block::default()
+                .title_top(Line::from("| Edit Folder |").centered())
+                .borders(Borders::ALL)
+                .style(Style::default())
+                .title_bottom(match app.current_mode {
+                    crate::app::CurrentMode::Insert => " I ",
+                    crate::app::CurrentMode::Normal => " N ",
+                });
 
-        let area = centered_rect(50, 50, frame.area());
-        frame.render_widget(error_paragraph, area);
+            let folder_text = Text::styled(
+                watched_folder.path().to_string_lossy(),
+                Style::default().fg(Color::default()),
+            );
+            let folder_paragraph = Paragraph::new(folder_text)
+                .block(popup_block)
+                .alignment(ratatui::layout::Alignment::Center)
+                .wrap(Wrap { trim: false }); // Do not cut off whn over edge
+
+            let area = centered_rect(50, 50, frame.area());
+            frame.render_widget(folder_paragraph, area);
+        }
+        CurrentScreen::EditPeer(ref peer) => {
+            // Clear the window
+            frame.render_widget(Clear, frame.area());
+
+            let popup_block = Block::default()
+                .title_top(Line::from("| Edit Peer |").centered())
+                .borders(Borders::ALL)
+                .style(Style::default())
+                .title_bottom(match app.current_mode {
+                    crate::app::CurrentMode::Insert => " I ",
+                    crate::app::CurrentMode::Normal => " N ",
+                });
+
+            let folder_text = Text::styled(
+                format!("{}", peer.ip),
+                Style::default().fg(Color::default()),
+            );
+            let folder_paragraph = Paragraph::new(folder_text)
+                .block(popup_block)
+                .alignment(ratatui::layout::Alignment::Center)
+                .wrap(Wrap { trim: false }); // Do not cut off whn over edge
+
+            let area = centered_rect(50, 50, frame.area());
+            frame.render_widget(folder_paragraph, area);
+        }
     }
 }
 

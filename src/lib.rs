@@ -2,6 +2,8 @@ mod config;
 pub use config::Config;
 mod server;
 mod types;
+pub use types::Peer;
+pub use types::WatchedFolder;
 mod watcher;
 
 mod connection;

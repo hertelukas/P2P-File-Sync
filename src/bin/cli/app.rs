@@ -1,7 +1,7 @@
 //! Stores persistant data of the CLI binary
 use std::sync::{Arc, Mutex};
 
-use p2p_file_sync::Config;
+use p2p_file_sync::{Config, Peer, WatchedFolder};
 use tokio::task;
 
 /// Used to switch the screen
@@ -10,6 +10,8 @@ pub enum CurrentScreen {
     Main,
     Loading,
     Error(String),
+    EditFolder(WatchedFolder),
+    EditPeer(Peer),
 }
 
 /// More or less vim modes
@@ -57,6 +59,46 @@ impl App {
         match &self.current_focus {
             CurrentFocus::Folder => self.current_focus = CurrentFocus::Peer,
             CurrentFocus::Peer => self.current_focus = CurrentFocus::Folder,
+        }
+    }
+
+    pub fn edit_selected_folder(&mut self) {
+        // Do nothing, if we don't have a folder selected
+        if let Some(selected_folder) = self.selected_folder {
+            // First, we clone our WatchedFolder and drop the mutex
+            let folder: WatchedFolder = {
+                let config_lock = self.config.lock().unwrap();
+                if let Some(ref config) = *config_lock {
+                    config.paths()[selected_folder].clone()
+                } else {
+                    // Do nothing if we have no config
+                    return;
+                }
+            };
+
+            // Now, update our folder
+            let mut screen_lock = self.current_screen.lock().unwrap();
+            *screen_lock = CurrentScreen::EditFolder(folder);
+        }
+    }
+
+    pub fn edit_selected_peer(&mut self) {
+        // Do nothing, if we don't have a folder selected
+        if let Some(selected_pper) = self.selected_peer {
+            // First, we clone our WatchedFolder and drop the mutex
+            let peer: Peer = {
+                let config_lock = self.config.lock().unwrap();
+                if let Some(ref config) = *config_lock {
+                    config.peers()[selected_pper].clone()
+                } else {
+                    // Do nothing if we have no config
+                    return;
+                }
+            };
+
+            // Now, update our folder
+            let mut screen_lock = self.current_screen.lock().unwrap();
+            *screen_lock = CurrentScreen::EditPeer(peer);
         }
     }
 
