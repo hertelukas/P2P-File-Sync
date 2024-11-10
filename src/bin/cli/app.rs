@@ -1,6 +1,7 @@
 //! Stores persistant data of the CLI binary
 
 use p2p_file_sync::{Config, Peer, WatchedFolder};
+use reqwest::Client;
 
 /// Used to switch the screen
 pub enum CurrentScreen {
@@ -25,6 +26,20 @@ impl CreateFolderState {
         match &self.focus {
             CreateFolderFocus::Folder => self.focus = CreateFolderFocus::Id,
             CreateFolderFocus::Id => self.focus = CreateFolderFocus::Folder,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct FolderError;
+
+impl TryInto<WatchedFolder> for &CreateFolderState {
+    type Error = FolderError;
+
+    fn try_into(self) -> Result<WatchedFolder, Self::Error> {
+        match self.id_input.as_int() {
+            Some(id) => Ok(WatchedFolder::new_full(id, &self.path_input.text)),
+            None => Err(FolderError),
         }
     }
 }
@@ -132,6 +147,7 @@ pub struct App {
     pub config: Option<Config>,
     pub selected_folder: Option<usize>,
     pub selected_peer: Option<usize>,
+    pub client: Client,
 }
 
 impl App {
@@ -143,6 +159,7 @@ impl App {
             config: None,
             selected_folder: None,
             selected_peer: None,
+            client: Client::new(),
         }
     }
 
@@ -266,7 +283,7 @@ impl App {
         self.current_screen = CurrentScreen::CreatePeer;
     }
 
-    pub fn discard(&mut self){
+    pub fn discard(&mut self) {
         self.current_screen = CurrentScreen::Main;
     }
 
@@ -286,8 +303,43 @@ impl App {
         }
     }
 
+    pub async fn post_folder(&mut self) {
+        if let CurrentScreen::CreateFolder(folder_input) = &self.current_screen {
+            if let Ok(folder) = folder_input.try_into() as Result<WatchedFolder, _> {
+                match self
+                    .client
+                    .post("http://127.0.0.1:3617/folder")
+                    .json(&folder)
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        // Add the folder to our state only if we get success back
+                        if let Some(ref mut config) = self.config {
+                            // This should never fail, as only storing could fail - what we are not doing
+                            config.add_folder(folder.clone(), false).await.unwrap();
+                        }
+                        self.current_screen = CurrentScreen::Main;
+                        self.current_mode = CurrentMode::Normal;
+                    }
+                    Err(e) => {
+                        self.current_screen =
+                            CurrentScreen::Error(format!("Server unreachable: {e}"))
+                    }
+                }
+            } else {
+                self.current_screen =
+                    CurrentScreen::Error("Failed to create valid folder".to_string());
+            }
+        } else {
+            self.current_screen = CurrentScreen::Error(
+                "Can only create folder through the \"Create Folder\" prompt".to_string(),
+            );
+        }
+    }
+
     pub async fn fetch_config(&mut self) {
-        match reqwest::get("http://127.0.0.1:3617").await {
+        match self.client.get("http://127.0.0.1:3617").send().await {
             Ok(resp) => match resp.json::<Config>().await {
                 Ok(config) => {
                     self.config = Some(config);

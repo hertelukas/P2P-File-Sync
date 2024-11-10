@@ -135,6 +135,7 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                         KeyCode::Esc => app.discard(),
                         KeyCode::Char('j') => folder_state.toggle_focus(), // Toggle is ok for wrapping around
                         KeyCode::Char('k') => folder_state.toggle_focus(),
+                        KeyCode::Enter => app.post_folder().await,
                         _ => {}
                     },
                     CurrentScreen::CreatePeer => match key.code {
@@ -154,11 +155,17 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                             KeyCode::Backspace => {
                                 folder_state.path_input.delete_char();
                             }
+                            KeyCode::Enter | KeyCode::Tab => {
+                                // Go to next field, if currently editing path
+                                folder_state.toggle_focus();
+                            }
                             _ => {}
                         },
                         CreateFolderFocus::Id => match key.code {
                             KeyCode::Char(to_insert) => folder_state.id_input.enter_char(to_insert),
                             KeyCode::Backspace => folder_state.id_input.delete_char(),
+                            KeyCode::Enter => app.post_folder().await,
+                            KeyCode::Tab => folder_state.toggle_focus(),
                             _ => {}
                         },
                     },
