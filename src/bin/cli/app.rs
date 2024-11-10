@@ -97,6 +97,20 @@ impl TextBox {
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
         new_cursor_pos.clamp(0, self.text.chars().count())
     }
+
+    pub fn as_int(&self) -> Option<u32> {
+        if self.text.starts_with("0x") {
+            match u32::from_str_radix(&self.text[2..], 16) {
+                Ok(val) => Some(val),
+                Err(_) => None,
+            }
+        } else {
+            match self.text.parse() {
+                Ok(val) => Some(val),
+                Err(_) => None,
+            }
+        }
+    }
 }
 
 /// More or less vim modes

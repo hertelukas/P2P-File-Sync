@@ -118,7 +118,13 @@ pub fn ui(frame: &mut Frame, app: &App) {
             let id_input = Paragraph::new(create_folder_state.id_input.text.as_str())
                 .style(match create_folder_state.focus {
                     CreateFolderFocus::Folder => Style::default(),
-                    CreateFolderFocus::Id => Style::default().fg(Color::Blue),
+                    CreateFolderFocus::Id => Style::default().fg(
+                        if let Some(_) = create_folder_state.id_input.as_int() {
+                            Color::Blue
+                        } else {
+                            Color::Red
+                        },
+                    ),
                 })
                 .block(Block::bordered().title("ID"));
 
