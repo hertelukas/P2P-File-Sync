@@ -22,6 +22,13 @@ impl WatchedFolder {
         }
     }
 
+    pub fn new_full<P: AsRef<Path>>(id: u32, path: P) -> Self {
+        WatchedFolder {
+            id,
+            path: path.as_ref().to_path_buf(),
+        }
+    }
+
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
