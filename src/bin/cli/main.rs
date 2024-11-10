@@ -1,4 +1,4 @@
-use app::App;
+use app::{App, CreateFolderFocus, CurrentFocus, CurrentMode, CurrentScreen};
 use env_logger::Env;
 use ratatui::{
     crossterm::{
@@ -30,7 +30,7 @@ async fn main() -> eyre::Result<()> {
     terminal.clear()?;
 
     let mut app = App::new();
-    let _ = run(&mut terminal, &mut app);
+    let _ = run(&mut terminal, &mut app).await;
 
     //restore terminal
     restore_tui()?;
@@ -62,8 +62,9 @@ fn restore_tui() -> io::Result<()> {
     Ok(())
 }
 
-fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<(), std::io::Error> {
-    app.fetch_config();
+async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<(), std::io::Error> {
+    terminal.draw(|f| ui(f, app))?;
+    app.fetch_config().await;
     loop {
         terminal.draw(|f| ui(f, app))?;
 
@@ -73,61 +74,80 @@ fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<(), std:
                 continue;
             }
 
-            // Move the current screen outside of the lock
-            let current_screen = {
-                let lock = app.current_screen.lock().unwrap();
-                (*lock).clone()
-            };
-
+            let mut handled = true;
             // Only mode dependent keys
             match app.current_mode {
-                app::CurrentMode::Insert => match key.code {
+                CurrentMode::Insert => match key.code {
                     KeyCode::Esc => {
                         app.normal_mode();
                     }
-                    _ => {}
+                    _ => handled = false,
                 },
-                app::CurrentMode::Normal => match key.code {
-                    KeyCode::Tab => {
-                        app.toggle_focus();
-                    }
+                CurrentMode::Normal => match key.code {
                     KeyCode::Char('q') => {
                         return Ok(());
                     }
                     KeyCode::Char('i') => {
                         app.insert_mode();
                     }
-                    _ => {}
+                    _ => handled = false,
                 },
             }
 
+            if handled {
+                continue;
+            }
             // Keys depending on mode and screen
             match app.current_mode {
-                app::CurrentMode::Normal => match current_screen {
-                    app::CurrentScreen::Main => match key.code {
+                CurrentMode::Normal => match app.current_screen {
+                    CurrentScreen::Main => match key.code {
                         KeyCode::Char('j') => match app.current_focus {
-                            app::CurrentFocus::Folder => app.select_folder_down(),
-                            app::CurrentFocus::Peer => app.select_peer_down(),
+                            CurrentFocus::Folder => app.select_folder_down(),
+                            CurrentFocus::Peer => app.select_peer_down(),
                         },
                         KeyCode::Char('k') => match app.current_focus {
-                            app::CurrentFocus::Folder => app.select_folder_up(),
-                            app::CurrentFocus::Peer => app.select_peer_up(),
+                            CurrentFocus::Folder => app.select_folder_up(),
+                            CurrentFocus::Peer => app.select_peer_up(),
                         },
                         KeyCode::Enter => match app.current_focus {
-                            app::CurrentFocus::Folder => app.edit_selected_folder(),
-                            app::CurrentFocus::Peer => app.edit_selected_peer(),
+                            CurrentFocus::Folder => app.edit_selected_folder(),
+                            CurrentFocus::Peer => app.edit_selected_peer(),
                         },
                         KeyCode::Char('o') => match app.current_focus {
-                            app::CurrentFocus::Folder => app.open_create_folder(),
-                            app::CurrentFocus::Peer => app.open_create_peer(),
+                            CurrentFocus::Folder => app.open_create_folder(),
+                            CurrentFocus::Peer => app.open_create_peer(),
                         },
+                        KeyCode::Tab => {
+                            app.toggle_focus();
+                        }
+                        _ => {}
+                    },
+                    CurrentScreen::CreateFolder(ref mut folder_state) => match key.code {
+                        KeyCode::Tab => folder_state.toggle_focus(),
+                        KeyCode::Char('j') => folder_state.toggle_focus(), // Toggle is ok for wrapping around
+                        KeyCode::Char('k') => folder_state.toggle_focus(),
                         _ => {}
                     },
                     _ => {}
                 },
-                app::CurrentMode::Insert => match current_screen {
-                    app::CurrentScreen::Main => {}
-                    // Keys that have the same effect on each screen
+                CurrentMode::Insert => match app.current_screen {
+                    CurrentScreen::Main => {}
+                    CurrentScreen::CreateFolder(ref mut folder_state) => match folder_state.focus {
+                        CreateFolderFocus::Folder => match key.code {
+                            KeyCode::Char(to_insert) => {
+                                folder_state.path_input.enter_char(to_insert)
+                            }
+                            KeyCode::Backspace => {
+                                folder_state.path_input.delete_char();
+                            }
+                            _ => {}
+                        },
+                        CreateFolderFocus::Id => match key.code {
+                            KeyCode::Char(to_insert) => folder_state.id_input.enter_char(to_insert),
+                            KeyCode::Backspace => folder_state.id_input.delete_char(),
+                            _ => {}
+                        },
+                    },
                     _ => {}
                 },
             }

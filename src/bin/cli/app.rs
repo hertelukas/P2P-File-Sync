@@ -1,19 +1,102 @@
 //! Stores persistant data of the CLI binary
-use std::sync::{Arc, Mutex};
 
 use p2p_file_sync::{Config, Peer, WatchedFolder};
-use tokio::task;
 
 /// Used to switch the screen
-#[derive(Clone)]
 pub enum CurrentScreen {
     Main,
     Loading,
     Error(String),
     EditFolder(WatchedFolder),
     EditPeer(Peer),
-    CreateFolder,
+    CreateFolder(CreateFolderState),
     CreatePeer,
+}
+
+#[derive(Default)]
+pub struct CreateFolderState {
+    pub path_input: TextBox,
+    pub id_input: TextBox,
+    pub focus: CreateFolderFocus,
+}
+
+impl CreateFolderState {
+    pub fn toggle_focus(&mut self) {
+        match &self.focus {
+            CreateFolderFocus::Folder => self.focus = CreateFolderFocus::Id,
+            CreateFolderFocus::Id => self.focus = CreateFolderFocus::Folder,
+        }
+    }
+}
+
+#[derive(Default)]
+pub enum CreateFolderFocus {
+    #[default]
+    Folder,
+    Id,
+}
+
+#[derive(Default)]
+pub struct TextBox {
+    pub text: String,
+    pub index: usize,
+}
+
+// This impl is heavily inspired (copied) by https://ratatui.rs/examples/apps/user_input/
+impl TextBox {
+    fn move_cursor_left(&mut self) {
+        let cursor_moved_left = self.index.saturating_sub(1);
+        self.index = self.clamp_cursor(cursor_moved_left);
+    }
+
+    fn move_cursor_right(&mut self) {
+        let cursor_moved_right = self.index.saturating_add(1);
+        self.index = self.clamp_cursor(cursor_moved_right);
+    }
+
+    pub fn enter_char(&mut self, new_char: char) {
+        let index = self.byte_index();
+        self.text.insert(index, new_char);
+        self.move_cursor_right();
+    }
+
+    /// Returns the byte index based on the character position.
+    ///
+    /// Since each character in a string can be contain multiple bytes, it's necessary to calculate
+    /// the byte index based on the index of the character.
+    fn byte_index(&self) -> usize {
+        self.text
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(self.index)
+            .unwrap_or(self.text.len())
+    }
+
+    pub fn delete_char(&mut self) {
+        let is_not_cursor_leftmost = self.index != 0;
+        if is_not_cursor_leftmost {
+            // Method "remove" is not used on the saved text for deleting the selected char.
+            // Reason: Using remove on String works on bytes instead of the chars.
+            // Using remove would require special care because of char boundaries.
+
+            let current_index = self.index;
+            let from_left_to_current_index = current_index - 1;
+
+            // Getting all characters before the selected character.
+            let before_char_to_delete = self.text.chars().take(from_left_to_current_index);
+            // Getting all characters after selected character.
+            let after_char_to_delete = self.text.chars().skip(current_index);
+
+            // Put all characters together except the selected one.
+            // By leaving the selected one out, it is forgotten and therefore deleted.
+            self.text = before_char_to_delete.chain(after_char_to_delete).collect();
+            self.move_cursor_left();
+        }
+    }
+
+    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
+        new_cursor_pos.clamp(0, self.text.chars().count())
+    }
 }
 
 /// More or less vim modes
@@ -29,10 +112,10 @@ pub enum CurrentFocus {
 }
 
 pub struct App {
-    pub current_screen: Arc<Mutex<CurrentScreen>>,
+    pub current_screen: CurrentScreen,
     pub current_mode: CurrentMode,
     pub current_focus: CurrentFocus,
-    pub config: Arc<Mutex<Option<Config>>>,
+    pub config: Option<Config>,
     pub selected_folder: Option<usize>,
     pub selected_peer: Option<usize>,
 }
@@ -40,10 +123,10 @@ pub struct App {
 impl App {
     pub fn new() -> App {
         App {
-            current_screen: Arc::new(Mutex::new(CurrentScreen::Main)),
+            current_screen: CurrentScreen::Loading,
             current_mode: CurrentMode::Normal,
             current_focus: CurrentFocus::Folder,
-            config: Arc::new(Mutex::new(None)),
+            config: None,
             selected_folder: None,
             selected_peer: None,
         }
@@ -69,8 +152,7 @@ impl App {
         if let Some(selected_folder) = self.selected_folder {
             // First, we clone our WatchedFolder and drop the mutex
             let folder: WatchedFolder = {
-                let config_lock = self.config.lock().unwrap();
-                if let Some(ref config) = *config_lock {
+                if let Some(ref config) = self.config {
                     config.paths()[selected_folder].clone()
                 } else {
                     // Do nothing if we have no config
@@ -79,7 +161,7 @@ impl App {
             };
 
             // Now, update our folder
-            self.set_screen(CurrentScreen::EditFolder(folder));
+            self.current_screen = CurrentScreen::EditFolder(folder);
         }
     }
 
@@ -88,8 +170,7 @@ impl App {
         if let Some(selected_pper) = self.selected_peer {
             // First, we clone our WatchedFolder and drop the mutex
             let peer: Peer = {
-                let config_lock = self.config.lock().unwrap();
-                if let Some(ref config) = *config_lock {
+                if let Some(ref config) = self.config {
                     config.peers()[selected_pper].clone()
                 } else {
                     // Do nothing if we have no config
@@ -98,7 +179,7 @@ impl App {
             };
 
             // Now, update our folder
-            self.set_screen(CurrentScreen::EditPeer(peer));
+            self.current_screen = CurrentScreen::EditPeer(peer);
         }
     }
 
@@ -164,16 +245,15 @@ impl App {
     }
 
     pub fn open_create_folder(&mut self) {
-        self.set_screen(CurrentScreen::CreateFolder);
+        self.current_screen = CurrentScreen::CreateFolder(CreateFolderState::default());
     }
 
     pub fn open_create_peer(&mut self) {
-        self.set_screen(CurrentScreen::CreatePeer);
+        self.current_screen = CurrentScreen::CreatePeer;
     }
 
     fn number_folders(&mut self) -> usize {
-        let lock = self.config.lock().unwrap();
-        if let Some(ref config) = *lock {
+        if let Some(ref config) = self.config {
             config.paths().len()
         } else {
             0
@@ -181,45 +261,28 @@ impl App {
     }
 
     fn number_peers(&mut self) -> usize {
-        let lock = self.config.lock().unwrap();
-        if let Some(ref config) = *lock {
+        if let Some(ref config) = self.config {
             config.peers().len()
         } else {
             0
         }
     }
 
-    fn set_screen(&mut self, screen: CurrentScreen) {
-        let mut screen_lock = self.current_screen.lock().unwrap();
-        *screen_lock = screen;
-    }
-
-    pub fn fetch_config(&mut self) {
-        self.set_screen(CurrentScreen::Loading);
-
-        let config_handle = Arc::clone(&self.config);
-        let screen_handle = Arc::clone(&self.current_screen);
-
-        task::spawn(async move {
-            match reqwest::get("http://127.0.0.1:3617").await {
-                Ok(resp) => match resp.json::<Config>().await {
-                    Ok(config) => {
-                        let mut config_lock = config_handle.lock().unwrap();
-                        *config_lock = Some(config);
-                        drop(config_lock);
-                        let mut screen_lock = screen_handle.lock().unwrap();
-                        *screen_lock = CurrentScreen::Main;
-                    }
-                    Err(e) => {
-                        let mut screen_lock = screen_handle.lock().unwrap();
-                        *screen_lock = CurrentScreen::Error(format!("Could not parse config: {e}"));
-                    }
-                },
-                Err(e) => {
-                    let mut screen_lock = screen_handle.lock().unwrap();
-                    *screen_lock = CurrentScreen::Error(format!("Server unreachable: {e}"));
+    pub async fn fetch_config(&mut self) {
+        match reqwest::get("http://127.0.0.1:3617").await {
+            Ok(resp) => match resp.json::<Config>().await {
+                Ok(config) => {
+                    self.config = Some(config);
+                    self.current_screen = CurrentScreen::Main;
                 }
+                Err(e) => {
+                    self.current_screen =
+                        CurrentScreen::Error(format!("Could not parse config: {e}"));
+                }
+            },
+            Err(e) => {
+                self.current_screen = CurrentScreen::Error(format!("Server unreachable: {e}"));
             }
-        });
+        }
     }
 }
