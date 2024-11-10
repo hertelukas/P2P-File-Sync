@@ -266,6 +266,10 @@ impl App {
         self.current_screen = CurrentScreen::CreatePeer;
     }
 
+    pub fn discard(&mut self){
+        self.current_screen = CurrentScreen::Main;
+    }
+
     fn number_folders(&mut self) -> usize {
         if let Some(ref config) = self.config {
             config.paths().len()

@@ -122,12 +122,26 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                         }
                         _ => {}
                     },
+                    CurrentScreen::EditFolder(_) => match key.code {
+                        KeyCode::Esc => app.discard(),
+                        _ => {}
+                    },
+                    CurrentScreen::EditPeer(_) => match key.code {
+                        KeyCode::Esc => app.discard(),
+                        _ => {}
+                    },
                     CurrentScreen::CreateFolder(ref mut folder_state) => match key.code {
                         KeyCode::Tab => folder_state.toggle_focus(),
+                        KeyCode::Esc => app.discard(),
                         KeyCode::Char('j') => folder_state.toggle_focus(), // Toggle is ok for wrapping around
                         KeyCode::Char('k') => folder_state.toggle_focus(),
                         _ => {}
                     },
+                    CurrentScreen::CreatePeer => match key.code {
+                        KeyCode::Esc => app.discard(),
+                        _ => {}
+                    },
+
                     _ => {}
                 },
                 CurrentMode::Insert => match app.current_screen {
