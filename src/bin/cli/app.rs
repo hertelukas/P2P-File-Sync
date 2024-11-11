@@ -418,4 +418,71 @@ mod tests {
         assert_eq!(textbox.text, "");
         assert_eq!(textbox.index, 0);
     }
+
+    #[test]
+    fn test_textbox_try_into() {
+        let mut textbox = TextBox::default();
+
+        textbox.enter_char('1');
+        textbox.enter_char('2');
+
+        let i = ((&textbox).try_into() as Result<u32, _>).unwrap();
+
+        assert_eq!(i, 12);
+    }
+
+    #[test]
+    fn test_textbox_try_into_hex() {
+        let mut textbox = TextBox::default();
+
+        textbox.enter_char('0');
+        textbox.enter_char('x');
+        textbox.enter_char('1');
+        textbox.enter_char('2');
+
+        let i = ((&textbox).try_into() as Result<u32, _>).unwrap();
+
+        assert_eq!(i, 18);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_textbox_try_into_fails() {
+        let mut textbox = TextBox::default();
+
+        textbox.enter_char('0');
+        textbox.enter_char('x');
+
+        let _ = ((&textbox).try_into() as Result<u32, _>).unwrap();
+    }
+
+    #[test]
+    fn test_create_folder_state() {
+        let mut folder_state = CreateFolderState::default();
+
+        assert!(matches!(folder_state.focus, CreateFolderFocus::Folder));
+        folder_state.toggle_focus();
+        assert!(matches!(folder_state.focus, CreateFolderFocus::Id));
+    }
+
+    #[test]
+    fn test_create_folder_into() {
+        let mut folder_state = CreateFolderState::default();
+
+        folder_state.path_input.enter_char('/');
+        folder_state.path_input.enter_char('f');
+        folder_state.path_input.enter_char('o');
+        folder_state.path_input.enter_char('o');
+
+        folder_state.id_input.enter_char('8');
+        folder_state.id_input.enter_char('2');
+
+        match (&folder_state).try_into() as Result<WatchedFolder, _> {
+            Ok(f) => {
+                assert_eq!(f.id(), 82);
+                assert_eq!(f.path(), &std::path::PathBuf::from("/foo"));
+            }
+            Err(_) => panic!("Failed into watched folder"),
+        }
+    }
 }
