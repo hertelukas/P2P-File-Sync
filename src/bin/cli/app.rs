@@ -8,24 +8,24 @@ pub enum CurrentScreen {
     Main,
     Loading,
     Error(String),
-    EditFolder(WatchedFolder),
+    EditFolder(EditFolderState),
     EditPeer(Peer),
-    CreateFolder(CreateFolderState),
+    CreateFolder(EditFolderState),
     CreatePeer,
 }
 
 #[derive(Default)]
-pub struct CreateFolderState {
+pub struct EditFolderState {
     pub path_input: TextBox,
     pub id_input: TextBox,
-    pub focus: CreateFolderFocus,
+    pub focus: EditFolderFocus,
 }
 
-impl CreateFolderState {
+impl EditFolderState {
     pub fn toggle_focus(&mut self) {
         match &self.focus {
-            CreateFolderFocus::Folder => self.focus = CreateFolderFocus::Id,
-            CreateFolderFocus::Id => self.focus = CreateFolderFocus::Folder,
+            EditFolderFocus::Folder => self.focus = EditFolderFocus::Id,
+            EditFolderFocus::Id => self.focus = EditFolderFocus::Folder,
         }
     }
 }
@@ -33,7 +33,7 @@ impl CreateFolderState {
 #[derive(Debug)]
 pub struct FolderError;
 
-impl TryInto<WatchedFolder> for &CreateFolderState {
+impl TryInto<WatchedFolder> for &EditFolderState {
     type Error = FolderError;
 
     fn try_into(self) -> Result<WatchedFolder, Self::Error> {
@@ -44,8 +44,24 @@ impl TryInto<WatchedFolder> for &CreateFolderState {
     }
 }
 
+impl From<WatchedFolder> for EditFolderState {
+    fn from(folder: WatchedFolder) -> Self {
+        EditFolderState {
+            path_input: TextBox {
+                text: folder.path().to_string_lossy().to_string(),
+                index: folder.path().to_string_lossy().len(),
+            },
+            id_input: TextBox {
+                text: format!("{:x}", folder.id()),
+                index: format!("{:x}", folder.id()).len(),
+            },
+            focus: EditFolderFocus::Folder,
+        }
+    }
+}
+
 #[derive(Default)]
-pub enum CreateFolderFocus {
+pub enum EditFolderFocus {
     #[default]
     Folder,
     Id,
@@ -196,7 +212,7 @@ impl App {
             };
 
             // Now, update our folder
-            self.current_screen = CurrentScreen::EditFolder(folder);
+            self.current_screen = CurrentScreen::EditFolder(folder.into());
         }
     }
 
@@ -280,7 +296,7 @@ impl App {
     }
 
     pub fn open_create_folder(&mut self) {
-        self.current_screen = CurrentScreen::CreateFolder(CreateFolderState::default());
+        self.current_screen = CurrentScreen::CreateFolder(EditFolderState::default());
     }
 
     pub fn open_create_peer(&mut self) {
@@ -458,16 +474,16 @@ mod tests {
 
     #[test]
     fn test_create_folder_state() {
-        let mut folder_state = CreateFolderState::default();
+        let mut folder_state = EditFolderState::default();
 
-        assert!(matches!(folder_state.focus, CreateFolderFocus::Folder));
+        assert!(matches!(folder_state.focus, EditFolderFocus::Folder));
         folder_state.toggle_focus();
-        assert!(matches!(folder_state.focus, CreateFolderFocus::Id));
+        assert!(matches!(folder_state.focus, EditFolderFocus::Id));
     }
 
     #[test]
     fn test_create_folder_into() {
-        let mut folder_state = CreateFolderState::default();
+        let mut folder_state = EditFolderState::default();
 
         folder_state.path_input.enter_char('/');
         folder_state.path_input.enter_char('f');

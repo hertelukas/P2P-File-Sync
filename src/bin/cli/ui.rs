@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{self, App, CreateFolderFocus, CurrentMode, CurrentScreen};
+use crate::app::{self, App, CurrentMode, CurrentScreen, EditFolderFocus, EditFolderState};
 
 pub fn ui(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -39,19 +39,8 @@ pub fn ui(frame: &mut Frame, app: &App) {
             let area = centered_rect(50, 50, frame.area());
             frame.render_widget(error_paragraph, area);
         }
-        CurrentScreen::EditFolder(ref watched_folder) => {
-            let popup_block = create_popup_block(app, "Edit Folder".to_string(), true);
-            let folder_text = Text::styled(
-                watched_folder.path().to_string_lossy(),
-                Style::default().fg(Color::default()),
-            );
-            let folder_paragraph = Paragraph::new(folder_text)
-                .block(popup_block)
-                .alignment(ratatui::layout::Alignment::Center)
-                .wrap(Wrap { trim: false }); // Do not cut off whn over edge
-
-            let area = centered_rect(50, 50, frame.area());
-            frame.render_widget(folder_paragraph, area);
+        CurrentScreen::EditFolder(ref edit_folder_state) => {
+            render_edit_folder(frame, app, edit_folder_state, "Edit Folder".to_string());
         }
         CurrentScreen::EditPeer(ref peer) => {
             let popup_block = create_popup_block(app, "Edit Peer".to_string(), true);
@@ -69,95 +58,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
             frame.render_widget(folder_paragraph, area);
         }
         CurrentScreen::CreateFolder(ref create_folder_state) => {
-            let popup_block = create_popup_block(app, "Create Folder".to_string(), true);
-
-            let vertical = Layout::vertical([
-                Constraint::Length(1),
-                Constraint::Length(3),
-                Constraint::Length(3),
-            ]);
-
-            let area = centered_rect(50, 50, frame.area());
-            let [help_area, folder_area, id_area] = vertical.areas(area.inner(Margin {
-                horizontal: 1,
-                vertical: 1,
-            }));
-
-            let (msg, style) = match app.current_mode {
-                CurrentMode::Insert => (
-                    vec![
-                        "Press ".into(),
-                        "Esc".bold(),
-                        " to stop editing, ".into(),
-                        "Enter".bold(),
-                        " to add the folder.".into(),
-                    ],
-                    Style::default().add_modifier(Modifier::RAPID_BLINK),
-                ),
-                CurrentMode::Normal => (
-                    vec![
-                        "Press ".into(),
-                        "I".bold(),
-                        " to start editing, ".into(),
-                        "Tab".bold(),
-                        " to switch the focus, and ".into(),
-                        "Enter".bold(),
-                        " to add the folder.".into(),
-                    ],
-                    Style::default(),
-                ),
-            };
-            let text = Text::from(Line::from(msg)).patch_style(style);
-            let help_message = Paragraph::new(text);
-
-            let folder_input = Paragraph::new(create_folder_state.path_input.text.as_str())
-                .style(match create_folder_state.focus {
-                    CreateFolderFocus::Folder => Style::default().fg(Color::Blue),
-                    CreateFolderFocus::Id => Style::default(),
-                })
-                .block(Block::bordered().title("Path"));
-
-            let id_input = Paragraph::new(create_folder_state.id_input.text.as_str())
-                .style(match create_folder_state.focus {
-                    CreateFolderFocus::Folder => Style::default(),
-                    CreateFolderFocus::Id => Style::default().fg(
-                        if let Ok(_) = (&create_folder_state.id_input).try_into() as Result<u32, _>
-                        {
-                            Color::Blue
-                        } else {
-                            Color::Red
-                        },
-                    ),
-                })
-                .block(Block::bordered().title("ID"));
-
-            frame.render_widget(popup_block, area);
-            frame.render_widget(help_message, help_area);
-            frame.render_widget(folder_input, folder_area);
-            frame.render_widget(id_input, id_area);
-
-            // Render cursor
-            match app.current_mode {
-                // Hide the cursor
-                CurrentMode::Normal => {}
-                // Show cursor in correct input area
-                #[allow(clippy::cast_possible_truncation)]
-                CurrentMode::Insert => frame.set_cursor_position(Position::new(
-                    match create_folder_state.focus {
-                        CreateFolderFocus::Folder => {
-                            folder_area.x + create_folder_state.path_input.index as u16 + 1
-                        }
-
-                        CreateFolderFocus::Id => {
-                            id_area.x + create_folder_state.id_input.index as u16 + 1
-                        }
-                    },
-                    match create_folder_state.focus {
-                        CreateFolderFocus::Folder => folder_area.y + 1,
-                        CreateFolderFocus::Id => id_area.y + 1,
-                    },
-                )),
-            }
+            render_edit_folder(frame, app, create_folder_state, "Create Folder".to_string());
         }
         CurrentScreen::CreatePeer => {
             let popup_block = create_popup_block(app, "Create Peer".to_string(), true);
@@ -166,6 +67,92 @@ pub fn ui(frame: &mut Frame, app: &App) {
             frame.render_widget(popup_block, area);
         }
     }
+}
+
+fn render_edit_folder(frame: &mut Frame, app: &App, folder: &EditFolderState, title: String) {
+    let popup_block = create_popup_block(app, title, true);
+    let vertical = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(3),
+        Constraint::Length(3),
+    ]);
+
+    let area = centered_rect(50, 50, frame.area());
+    let [help_area, folder_area, id_area] = vertical.areas(area.inner(Margin {
+        horizontal: 1,
+        vertical: 1,
+    }));
+
+    let (msg, style) = match app.current_mode {
+        CurrentMode::Insert => (
+            vec![
+                "Press ".into(),
+                "Esc".bold(),
+                " to stop editing, ".into(),
+                "Enter".bold(),
+                " to add the folder.".into(),
+            ],
+            Style::default().add_modifier(Modifier::RAPID_BLINK),
+        ),
+        CurrentMode::Normal => (
+            vec![
+                "Press ".into(),
+                "I".bold(),
+                " to start editing, ".into(),
+                "Tab".bold(),
+                " to switch the focus, and ".into(),
+                "Enter".bold(),
+                " to save the changes.".into(),
+            ],
+            Style::default(),
+        ),
+    };
+    let text = Text::from(Line::from(msg)).patch_style(style);
+    let help_message = Paragraph::new(text);
+
+    let folder_input = Paragraph::new(folder.path_input.text.as_str())
+        .style(match folder.focus {
+            EditFolderFocus::Folder => Style::default().fg(Color::Blue),
+            EditFolderFocus::Id => Style::default(),
+        })
+        .block(Block::bordered().title("Path"));
+
+    let id_input = Paragraph::new(folder.id_input.text.as_str())
+        .style(match folder.focus {
+            EditFolderFocus::Folder => Style::default(),
+            EditFolderFocus::Id => Style::default().fg(
+                if let Ok(_) = (&folder.id_input).try_into() as Result<u32, _> {
+                    Color::Blue
+                } else {
+                    Color::Red
+                },
+            ),
+        })
+        .block(Block::bordered().title("ID"));
+
+    frame.render_widget(popup_block, area);
+    frame.render_widget(help_message, help_area);
+    frame.render_widget(folder_input, folder_area);
+    frame.render_widget(id_input, id_area);
+
+    // Render cursor
+    match app.current_mode {
+        // Hide the cursor
+        CurrentMode::Normal => {}
+        // Show cursor in correct input area
+        #[allow(clippy::cast_possible_truncation)]
+        CurrentMode::Insert => frame.set_cursor_position(Position::new(
+            match folder.focus {
+                EditFolderFocus::Folder => folder_area.x + folder.path_input.index as u16 + 1,
+
+                EditFolderFocus::Id => id_area.x + folder.id_input.index as u16 + 1,
+            },
+            match folder.focus {
+                EditFolderFocus::Folder => folder_area.y + 1,
+                EditFolderFocus::Id => id_area.y + 1,
+            },
+        )),
+    };
 }
 
 fn create_popup_block(app: &App, title: String, show_mode: bool) -> Block {

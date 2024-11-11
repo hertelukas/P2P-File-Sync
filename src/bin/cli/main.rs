@@ -1,4 +1,4 @@
-use app::{App, CreateFolderFocus, CurrentFocus, CurrentMode, CurrentScreen};
+use app::{App, EditFolderFocus, CurrentFocus, CurrentMode, CurrentScreen};
 use env_logger::Env;
 use ratatui::{
     crossterm::{
@@ -148,7 +148,7 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                 CurrentMode::Insert => match app.current_screen {
                     CurrentScreen::Main => {}
                     CurrentScreen::CreateFolder(ref mut folder_state) => match folder_state.focus {
-                        CreateFolderFocus::Folder => match key.code {
+                        EditFolderFocus::Folder => match key.code {
                             KeyCode::Char(to_insert) => {
                                 folder_state.path_input.enter_char(to_insert)
                             }
@@ -161,7 +161,7 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                             }
                             _ => {}
                         },
-                        CreateFolderFocus::Id => match key.code {
+                        EditFolderFocus::Id => match key.code {
                             KeyCode::Char(to_insert) => folder_state.id_input.enter_char(to_insert),
                             KeyCode::Backspace => folder_state.id_input.delete_char(),
                             KeyCode::Enter => app.post_folder().await,
