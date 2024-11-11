@@ -52,8 +52,8 @@ impl From<WatchedFolder> for EditFolderState {
                 index: folder.path().to_string_lossy().len(),
             },
             id_input: TextBox {
-                text: format!("{:x}", folder.id()),
-                index: format!("{:x}", folder.id()).len(),
+                text: format!("{:#x}", folder.id()),
+                index: format!("{:#x}", folder.id()).len(),
             },
             focus: EditFolderFocus::Folder,
         }

@@ -1,4 +1,4 @@
-use app::{App, EditFolderFocus, CurrentFocus, CurrentMode, CurrentScreen};
+use app::{App, CurrentFocus, CurrentMode, CurrentScreen, EditFolderFocus};
 use env_logger::Env;
 use ratatui::{
     crossterm::{
@@ -122,20 +122,24 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                         }
                         _ => {}
                     },
-                    CurrentScreen::EditFolder(_) => match key.code {
-                        KeyCode::Esc => app.discard(),
-                        _ => {}
-                    },
                     CurrentScreen::EditPeer(_) => match key.code {
                         KeyCode::Esc => app.discard(),
                         _ => {}
                     },
-                    CurrentScreen::CreateFolder(ref mut folder_state) => match key.code {
+                    CurrentScreen::CreateFolder(ref mut folder_state)
+                    | CurrentScreen::EditFolder(ref mut folder_state) => match key.code {
                         KeyCode::Tab => folder_state.toggle_focus(),
                         KeyCode::Esc => app.discard(),
                         KeyCode::Char('j') => folder_state.toggle_focus(), // Toggle is ok for wrapping around
                         KeyCode::Char('k') => folder_state.toggle_focus(),
-                        KeyCode::Enter => app.post_folder().await,
+                        KeyCode::Enter => {
+                            // Match again, post or update
+                            match app.current_screen {
+                                CurrentScreen::CreateFolder(_) => app.post_folder().await,
+                                CurrentScreen::EditFolder(_) => todo!(),
+                                _ => {}
+                            }
+                        }
                         _ => {}
                     },
                     CurrentScreen::CreatePeer => match key.code {
@@ -147,7 +151,8 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                 },
                 CurrentMode::Insert => match app.current_screen {
                     CurrentScreen::Main => {}
-                    CurrentScreen::CreateFolder(ref mut folder_state) => match folder_state.focus {
+                    CurrentScreen::CreateFolder(ref mut folder_state)
+                    | CurrentScreen::EditFolder(ref mut folder_state) => match folder_state.focus {
                         EditFolderFocus::Folder => match key.code {
                             KeyCode::Char(to_insert) => {
                                 folder_state.path_input.enter_char(to_insert)
@@ -164,7 +169,14 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                         EditFolderFocus::Id => match key.code {
                             KeyCode::Char(to_insert) => folder_state.id_input.enter_char(to_insert),
                             KeyCode::Backspace => folder_state.id_input.delete_char(),
-                            KeyCode::Enter => app.post_folder().await,
+                            KeyCode::Enter => {
+                                // Match again, as we might want to post or update
+                                match app.current_screen {
+                                    CurrentScreen::CreateFolder(_) => app.post_folder().await,
+                                    CurrentScreen::EditFolder(_) => todo!(),
+                                    _ => {}
+                                }
+                            }
                             KeyCode::Tab => folder_state.toggle_focus(),
                             _ => {}
                         },
