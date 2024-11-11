@@ -356,3 +356,62 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_textbox_enter() {
+        let mut textbox = TextBox::default();
+        assert_eq!(textbox.text, "");
+        assert_eq!(textbox.index, 0);
+
+        textbox.enter_char('a');
+        textbox.enter_char('b');
+        textbox.enter_char('c');
+
+        assert_eq!(textbox.text, "abc");
+        assert_eq!(textbox.index, 3);
+    }
+
+    #[test]
+    fn test_textbox_delete() {
+        let mut textbox = TextBox::default();
+        assert_eq!(textbox.text, "");
+        assert_eq!(textbox.index, 0);
+
+        textbox.enter_char('a');
+        textbox.enter_char('b');
+        textbox.enter_char('c');
+
+        assert_eq!(textbox.text, "abc");
+        assert_eq!(textbox.index, 3);
+
+        textbox.delete_char();
+        textbox.delete_char();
+        assert_eq!(textbox.text, "a");
+        assert_eq!(textbox.index, 1);
+    }
+
+    #[test]
+    fn test_textbox_delete_too_far() {
+        let mut textbox = TextBox::default();
+        assert_eq!(textbox.text, "");
+        assert_eq!(textbox.index, 0);
+
+        textbox.enter_char('a');
+        textbox.enter_char('b');
+        textbox.enter_char('c');
+
+        assert_eq!(textbox.text, "abc");
+        assert_eq!(textbox.index, 3);
+
+        textbox.delete_char();
+        textbox.delete_char();
+        textbox.delete_char();
+        textbox.delete_char(); // Make sure that we can handle this
+        assert_eq!(textbox.text, "");
+        assert_eq!(textbox.index, 0);
+    }
+}
