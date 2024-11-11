@@ -121,7 +121,8 @@ pub fn ui(frame: &mut Frame, app: &App) {
                 .style(match create_folder_state.focus {
                     CreateFolderFocus::Folder => Style::default(),
                     CreateFolderFocus::Id => Style::default().fg(
-                        if let Some(_) = create_folder_state.id_input.as_int() {
+                        if let Ok(_) = (&create_folder_state.id_input).try_into() as Result<u32, _>
+                        {
                             Color::Blue
                         } else {
                             Color::Red

@@ -37,9 +37,9 @@ impl TryInto<WatchedFolder> for &CreateFolderState {
     type Error = FolderError;
 
     fn try_into(self) -> Result<WatchedFolder, Self::Error> {
-        match self.id_input.as_int() {
-            Some(id) => Ok(WatchedFolder::new_full(id, &self.path_input.text)),
-            None => Err(FolderError),
+        match (&self.id_input).try_into() as Result<u32, _> {
+            Ok(id) => Ok(WatchedFolder::new_full(id, &self.path_input.text)),
+            Err(_) => Err(FolderError),
         }
     }
 }
@@ -112,18 +112,22 @@ impl TextBox {
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
         new_cursor_pos.clamp(0, self.text.chars().count())
     }
+}
 
-    pub fn as_int(&self) -> Option<u32> {
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    ParseError(#[from] std::num::ParseIntError),
+}
+
+impl TryInto<u32> for &TextBox {
+    type Error = Error;
+
+    fn try_into(self) -> Result<u32, Self::Error> {
         if self.text.starts_with("0x") {
-            match u32::from_str_radix(&self.text[2..], 16) {
-                Ok(val) => Some(val),
-                Err(_) => None,
-            }
+            u32::from_str_radix(&self.text[2..], 16).map_err(Error::from)
         } else {
-            match self.text.parse() {
-                Ok(val) => Some(val),
-                Err(_) => None,
-            }
+            self.text.parse().map_err(Error::from)
         }
     }
 }
