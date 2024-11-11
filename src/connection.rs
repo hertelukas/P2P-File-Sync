@@ -25,6 +25,8 @@ pub enum Error {
     FrameError(#[from] crate::frame::Error),
     #[error(transparent)]
     IoError(#[from] std::io::Error),
+    #[error("Illegal frame content")]
+    IllegalFrame,
 }
 
 impl Connection {
@@ -125,6 +127,9 @@ impl Connection {
                 global_peer,
                 path,
             } => {
+                if global_hash.len() != 256 / 8 {
+                    return Err(Error::IllegalFrame);
+                }
                 self.stream.write_u8(b'!').await?;
                 self.stream.write_all(&global_hash).await?;
                 self.stream
@@ -142,6 +147,10 @@ impl Connection {
                 self.stream.write_all(b"\r\n").await?;
             }
             Frame::File { size, data } => {
+                let data_len: u64 = data.len() as u64;
+                if *size != data_len {
+                    return Err(Error::IllegalFrame);
+                }
                 self.stream.write_u8(b'=').await?;
                 self.stream.write_all(&size.to_le_bytes()).await?;
                 self.stream.write_all(&data).await?;
@@ -159,9 +168,36 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
     use tokio::net::TcpListener;
 
     use super::*;
+
+    async fn test_frame(frame: Frame) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Client
+        let frame_for_client = frame.clone();
+        let t = tokio::spawn(async move {
+            let c = TcpStream::connect(addr).await.unwrap();
+            let mut client_connection = Connection::new(c);
+            client_connection
+                .write_frame(&frame_for_client)
+                .await
+                .unwrap();
+        });
+
+        t.await.unwrap();
+
+        // Accept as server
+        let (server_socket, _) = listener.accept().await.unwrap();
+
+        let mut connection = Connection::new(server_socket);
+        let read_frame = connection.read_frame().await.unwrap().unwrap();
+
+        assert_eq!(read_frame, frame);
+    }
 
     #[tokio::test]
     async fn test_connection_new() {
@@ -182,23 +218,73 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_frame_transfer() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+    async fn test_frame_transfer_db() {
+        test_frame(Frame::DbSync { folder_id: 0x123 }).await;
+    }
 
-        // Client
-        tokio::spawn(async move {
-            let c = TcpStream::connect(addr).await.unwrap();
-            let mut client_connection = Connection::new(c);
-            let _ = client_connection.write_frame(&Frame::Yes).await.unwrap();
-        });
+    #[tokio::test]
+    async fn test_frame_transfer_yes() {
+        test_frame(Frame::Yes).await;
+    }
 
-        // Accept as server
-        let (server_socket, _) = listener.accept().await.unwrap();
+    #[tokio::test]
+    async fn test_frame_transfer_no() {
+        test_frame(Frame::No).await;
+    }
 
-        let mut connection = Connection::new(server_socket);
-        let frame = connection.read_frame().await.unwrap().unwrap();
+    #[tokio::test]
+    async fn test_frame_transfer_done() {
+        test_frame(Frame::Done).await;
+    }
 
-        assert!(matches!(frame, Frame::Yes));
+    #[tokio::test]
+    async fn test_frame_transfer_init_global() {
+        test_frame(Frame::InitiatorGlobal {
+            global_hash: Bytes::from(vec![0xa; 256 / 8]),
+            global_last_modified: 0x123,
+            global_peer: "peer".to_string(),
+            path: "/foo".to_string(),
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_frame_transfer_request_file() {
+        test_frame(Frame::RequestFile {
+            folder_id: 0x1234,
+            path: "/foo/bar".to_string(),
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_frame_transfer_file() {
+        test_frame(Frame::File {
+            size: 0x10,
+            data: Bytes::from(vec![0x42; 0x10]),
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_hash_must_256() {
+        test_frame(Frame::InitiatorGlobal {
+            global_hash: Bytes::from(vec![0xa, 0xa]),
+            global_last_modified: 0x123,
+            global_peer: "peer".to_string(),
+            path: "/foo".to_string(),
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_file_correct_length() {
+        test_frame(Frame::File {
+            size: 0x10,
+            data: Bytes::from(vec![0x42; 10]),
+        })
+        .await;
     }
 }

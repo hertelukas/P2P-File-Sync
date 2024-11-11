@@ -14,7 +14,7 @@ pub enum Error {
     ParseError(#[from] FromUtf8Error),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Frame {
     // '.'
     DbSync {
@@ -40,7 +40,7 @@ pub enum Frame {
     },
     // =
     File {
-        size: i64,
+        size: u64,
         data: Bytes,
     },
 }
@@ -76,7 +76,7 @@ impl Frame {
                 Ok(())
             }
             b'=' => {
-                let size: i64 = src.get_i64_le();
+                let size: u64 = src.get_u64_le();
                 skip(src, size.try_into().unwrap())
             }
             _ => {
@@ -117,7 +117,7 @@ impl Frame {
                 Ok(Frame::RequestFile { folder_id, path })
             }
             b'=' => {
-                let size: i64 = src.get_i64_le();
+                let size: u64 = src.get_u64_le();
                 let data = Bytes::copy_from_slice(&src.chunk()[..size.try_into().unwrap()]);
                 Ok(Frame::File { size, data })
             }
