@@ -15,6 +15,19 @@ pub async fn run() -> eyre::Result<()> {
     let pool = database::setup().await?;
     let pool = Arc::new(pool);
 
+    // Set all ports
+    let http_server_port: u16 = std::env::var("HTTP_SERVER_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3617);
+    let db_sync_port: u16 = std::env::var("DB_SERVER_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3618);
+    let file_sync_port = std::env::var("DB_SERVER_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3619);
     let (tx_watch_cmd, rx_watch_cmd) = mpsc::channel(1);
     let (tx_change, mut rx_change) = mpsc::channel(1);
     let (tx_sync_cmd, rx_sync_cmd) = mpsc::channel(1);
@@ -49,11 +62,12 @@ pub async fn run() -> eyre::Result<()> {
         syncer_pool_handle,
         syncer_config_handle,
         rx_sync_cmd,
+        file_sync_port,
     ));
 
     // And accept sync requests
     let listen_sync_mutex_handle = config.clone();
-    tokio::spawn(listen_file_sync(listen_sync_mutex_handle));
+    tokio::spawn(listen_file_sync(listen_sync_mutex_handle, file_sync_port));
 
     // Periodically try to connect to the peers
     let connector_config_handle = config.clone();
@@ -63,6 +77,7 @@ pub async fn run() -> eyre::Result<()> {
         connector_pool_handle,
         connector_config_handle,
         connector_sync_cmd_handle,
+        db_sync_port,
     ));
     // And listen if someone wants to connect to us
     let listener_config_handle = config.clone();
@@ -72,11 +87,11 @@ pub async fn run() -> eyre::Result<()> {
         listener_pool_handle,
         listener_config_handle,
         listener_sync_cmd_handle,
+        db_sync_port,
     ));
 
     let server_config_handle = config.clone();
-    let port = std::env::var("HTTP_SERVER_PORT").unwrap_or_else(|_| "3617".to_string());
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", http_server_port))
         .await
         .unwrap();
     log::info!("Listening for TUI on {:?}", listener.local_addr());

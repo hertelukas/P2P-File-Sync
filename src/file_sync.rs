@@ -46,7 +46,12 @@ fn hash_data(data: Vec<u8>) -> Vec<u8> {
 ///
 /// If a connetion is established, a new thread is spawned,
 /// responsible for handling the connection.
-pub async fn try_connect(pool: Arc<sqlx::SqlitePool>, config: MutexConf, tx_sync_cmd: Sender<()>) {
+pub async fn try_connect(
+    pool: Arc<sqlx::SqlitePool>,
+    config: MutexConf,
+    tx_sync_cmd: Sender<()>,
+    port: u16,
+) {
     loop {
         // Create a vector of owned peer copies first, so we do
         // not have to hold the lock over the await of connect
@@ -57,7 +62,7 @@ pub async fn try_connect(pool: Arc<sqlx::SqlitePool>, config: MutexConf, tx_sync
 
         for peer in copied_peers {
             log::debug!("Trying to connect to {:?}", peer);
-            if let Ok(stream) = TcpStream::connect((peer, 3618)).await {
+            if let Ok(stream) = TcpStream::connect((peer, port)).await {
                 log::info!("Connected to {:?}", peer);
                 let config_handle = config.clone();
                 let pool_handle = pool.clone();
@@ -77,8 +82,8 @@ pub async fn wait_incoming(
     pool: Arc<sqlx::SqlitePool>,
     config: MutexConf,
     tx_sync_cmd: Sender<()>,
+    port: u16,
 ) {
-    let port = std::env::var("DB_SERVER_PORT").unwrap_or_else(|_| "3618".to_string());
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
@@ -371,7 +376,12 @@ VALUES (?, ?, ?, ?, ?)
     }
 }
 
-pub async fn sync_files(pool: Arc<sqlx::SqlitePool>, config: MutexConf, mut rx: Receiver<()>) {
+pub async fn sync_files(
+    pool: Arc<sqlx::SqlitePool>,
+    config: MutexConf,
+    mut rx: Receiver<()>,
+    port: u16,
+) {
     loop {
         // Block on waiting for some change that motivates us to sync
         rx.recv().await;
@@ -399,7 +409,7 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
 
             // TODO We currently do a connection for each file, maybe improve
             // Maybe a bit inefficient if the peer is offline
-            if let Ok(stream) = TcpStream::connect((file.global_peer.clone(), 3619)).await {
+            if let Ok(stream) = TcpStream::connect((file.global_peer.clone(), port)).await {
                 log::info!("Connected to {:?} for file sync", file.global_peer);
 
                 let mut connection = Connection::new(stream);
@@ -435,8 +445,7 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
     }
 }
 
-pub async fn listen_file_sync(config: MutexConf) {
-    let port = std::env::var("FILE_SERVER_PORT").unwrap_or_else(|_| "3619".to_string());
+pub async fn listen_file_sync(config: MutexConf, port: u16) {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
