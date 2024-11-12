@@ -168,10 +168,12 @@ pub struct App {
     pub selected_folder: Option<usize>,
     pub selected_peer: Option<usize>,
     pub client: Client,
+    address: String,
 }
 
 impl App {
     pub fn new() -> App {
+        let port = std::env::var("PORT").unwrap_or_else(|_| "3617".to_string());
         App {
             current_screen: CurrentScreen::Loading,
             current_mode: CurrentMode::Normal,
@@ -180,6 +182,7 @@ impl App {
             selected_folder: None,
             selected_peer: None,
             client: Client::new(),
+            address: format!("http://127.0.0.1:{}", port),
         }
     }
 
@@ -328,7 +331,7 @@ impl App {
             if let Ok(folder) = folder_input.try_into() as Result<WatchedFolder, _> {
                 match self
                     .client
-                    .post("http://127.0.0.1:3617/folder")
+                    .post(format!("{}/folder", self.address))
                     .json(&folder)
                     .send()
                     .await
@@ -359,7 +362,7 @@ impl App {
     }
 
     pub async fn fetch_config(&mut self) {
-        match self.client.get("http://127.0.0.1:3617").send().await {
+        match self.client.get(self.address.clone()).send().await {
             Ok(resp) => match resp.json::<Config>().await {
                 Ok(config) => {
                     self.config = Some(config);

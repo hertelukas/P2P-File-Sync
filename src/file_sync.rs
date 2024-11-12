@@ -78,9 +78,12 @@ pub async fn wait_incoming(
     config: MutexConf,
     tx_sync_cmd: Sender<()>,
 ) {
-    let listener = TcpListener::bind("0.0.0.0:3618").await.unwrap();
+    let port = std::env::var("DB_SERVER_PORT").unwrap_or_else(|_| "3618".to_string());
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
+        .await
+        .unwrap();
 
-    log::info!("Listening on {:?}", listener.local_addr());
+    log::info!("Listening for database sync on {:?}", listener.local_addr());
 
     loop {
         match listener.accept().await {
@@ -433,7 +436,11 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
 }
 
 pub async fn listen_file_sync(config: MutexConf) {
-    let listener = TcpListener::bind("0.0.0.0:3619").await.unwrap();
+    let port = std::env::var("FILE_SERVER_PORT").unwrap_or_else(|_| "3619".to_string());
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
+        .await
+        .unwrap();
+    log::info!("Listening for file sync on {:?}", listener.local_addr());
 
     loop {
         match listener.accept().await {

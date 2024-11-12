@@ -75,7 +75,11 @@ pub async fn run() -> eyre::Result<()> {
     ));
 
     let server_config_handle = config.clone();
-    let listener = TcpListener::bind("0.0.0.0:3617").await.unwrap();
+    let port = std::env::var("HTTP_SERVER_PORT").unwrap_or_else(|_| "3617".to_string());
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
+        .await
+        .unwrap();
+    log::info!("Listening for TUI on {:?}", listener.local_addr());
     axum::serve(listener, app(server_config_handle, tx_watch_cmd))
         .await
         .unwrap();
