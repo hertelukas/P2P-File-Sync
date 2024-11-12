@@ -175,7 +175,7 @@ fn folders_block(app: &App) -> impl Widget {
 
     if let Some(config) = &app.config {
         let mut i = 0;
-        for folder in config.paths() {
+        for folder in &config.paths {
             list_items.push(ListItem::new(
                 Line::from(Span::raw(format!("{}", folder))).bg(app.selected_folder.map_or(
                     Color::default(),
@@ -214,7 +214,7 @@ fn peers_block(app: &App) -> impl Widget {
 
     if let Some(config) = &app.config {
         let mut j = 0;
-        for peer in config.peers() {
+        for peer in &config.peers {
             let lines: Vec<Line> = format!("{}", peer)
                 .lines()
                 .enumerate()

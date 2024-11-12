@@ -207,7 +207,7 @@ impl App {
             // First, we clone our WatchedFolder and drop the mutex
             let folder: WatchedFolder = {
                 if let Some(ref config) = self.config {
-                    config.paths()[selected_folder].clone()
+                    config.paths[selected_folder].clone()
                 } else {
                     // Do nothing if we have no config
                     return;
@@ -225,7 +225,7 @@ impl App {
             // First, we clone our WatchedFolder and drop the mutex
             let peer: Peer = {
                 if let Some(ref config) = self.config {
-                    config.peers()[selected_pper].clone()
+                    config.peers[selected_pper].clone()
                 } else {
                     // Do nothing if we have no config
                     return;
@@ -312,7 +312,7 @@ impl App {
 
     fn number_folders(&mut self) -> usize {
         if let Some(ref config) = self.config {
-            config.paths().len()
+            config.paths.len()
         } else {
             0
         }
@@ -320,7 +320,7 @@ impl App {
 
     fn number_peers(&mut self) -> usize {
         if let Some(ref config) = self.config {
-            config.peers().len()
+            config.peers.len()
         } else {
             0
         }

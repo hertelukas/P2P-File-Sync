@@ -27,8 +27,8 @@ pub enum Error {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Config {
-    paths: Vec<WatchedFolder>,
-    peers: Vec<Peer>,
+    pub paths: Vec<WatchedFolder>,
+    pub peers: Vec<Peer>,
 }
 
 impl Config {
@@ -180,14 +180,6 @@ impl Config {
         } else {
             Err(Error::NoConfigDir)
         }
-    }
-
-    pub fn paths(&self) -> &Vec<WatchedFolder> {
-        &self.paths
-    }
-
-    pub fn peers(&self) -> &Vec<Peer> {
-        &self.peers
     }
 
     /// Returns the id's of the folders, shared with the peer

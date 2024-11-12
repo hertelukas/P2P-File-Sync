@@ -34,7 +34,7 @@ pub async fn watch(
         )?
     };
 
-    for path in config.lock().unwrap().paths() {
+    for path in &*config.lock().unwrap().paths {
         log::info!("Watching {:?}", &path);
         watcher.watch(path.path(), RecursiveMode::Recursive)?;
     }
