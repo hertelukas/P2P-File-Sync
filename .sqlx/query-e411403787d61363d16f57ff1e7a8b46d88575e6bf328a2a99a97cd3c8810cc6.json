@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT *\nFROM files\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "folder_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "path",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "local_hash",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "local_last_modified",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "global_hash",
+        "ordinal": 4,
+        "type_info": "Blob"
+      },
+      {
+        "name": "global_last_modified",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "global_peer",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e411403787d61363d16f57ff1e7a8b46d88575e6bf328a2a99a97cd3c8810cc6"
+}

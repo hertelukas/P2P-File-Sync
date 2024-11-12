@@ -545,3 +545,100 @@ pub async fn do_full_scan(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use sqlx::SqlitePool;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::{tempdir, TempDir};
+
+    use super::*;
+
+    /// Creates a new temporary directory.
+    ///
+    /// When TempDir goes out of scope, it may fail to delete the
+    /// directory, if we still have handles to files.
+    fn create_test_dir() -> TempDir {
+        let tmp_dir = tempdir().unwrap();
+
+        let foo_file_path = tmp_dir.path().join("foo.txt");
+        let bar_file_path = tmp_dir.path().join("bar.txt");
+
+        let mut foo_file = File::create(foo_file_path).unwrap();
+        let mut bar_file = File::create(bar_file_path).unwrap();
+
+        writeln!(foo_file, "foo").unwrap();
+        writeln!(bar_file, "bar").unwrap();
+
+        // Okay to not explicitly drop the files, as tmpdir will live on
+        tmp_dir
+    }
+
+    async fn get_all_files(pool: &SqlitePool) -> Vec<crate::types::File> {
+        query_as!(
+            crate::types::File,
+            r#"
+SELECT *
+FROM files
+"#
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+
+    #[sqlx::test]
+    async fn test_normal_scan(pool: SqlitePool) {
+        let dir = create_test_dir();
+        let pool = Arc::new(pool);
+        do_full_scan(pool.clone(), &dir.path().to_path_buf(), 6)
+            .await
+            .unwrap();
+
+        let files = get_all_files(&*pool).await;
+        assert_eq!(files.len(), 2);
+
+        files.into_iter().for_each(|f| {
+            assert!(f.folder_id == 6);
+            assert!(f
+                .path
+                .starts_with(dir.path().to_path_buf().to_string_lossy().as_ref()));
+            assert!(f.local_hash.is_some());
+            assert!(f.local_last_modified.is_some());
+        });
+    }
+
+    #[sqlx::test]
+    async fn test_empty_dir_scan(pool: SqlitePool) {
+        let dir = tempdir().unwrap();
+        let pool = Arc::new(pool);
+        do_full_scan(pool.clone(), &dir.path().to_path_buf(), 6)
+            .await
+            .unwrap();
+
+        let files = get_all_files(&*pool).await;
+        assert_eq!(files.len(), 0);
+    }
+
+    #[sqlx::test]
+    async fn recursive_folder_test(pool: SqlitePool) {
+        let dir = create_test_dir();
+        let pool = Arc::new(pool);
+        let nested_dir_path = dir.path().join("sub");
+        fs::create_dir(&nested_dir_path).unwrap();
+
+        let third_path = nested_dir_path.join("third");
+        let third_file = File::create(third_path).unwrap();
+        // Needed, so folder can be deleted at the end
+        drop(third_file);
+        do_full_scan(pool.clone(), &dir.path().to_path_buf(), 6)
+            .await
+            .unwrap();
+
+        let files = get_all_files(&*pool).await;
+
+        assert_eq!(files.len(), 3);
+        assert!(files.into_iter().any(|f| f.path.contains("third")))
+    }
+}
