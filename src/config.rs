@@ -185,6 +185,34 @@ impl Config {
         Ok(())
     }
 
+    /// Updates the folder with the id `folder.id`. Returns the old folder,
+    /// if changed and writes everything to file if `store` is true.
+    pub fn update_folder_sync(
+        &mut self,
+        folder: WatchedFolder,
+        store: bool,
+    ) -> Result<Option<WatchedFolder>, Error> {
+        let old_folder = {
+            if let Some(entry) = self.paths.iter_mut().find(|f| f.id() == folder.id()) {
+                let old = entry.clone();
+                if entry.path() != folder.path() {
+                    entry.path = folder.path;
+                    Some(old)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        if old_folder.is_some() && store {
+            self.store_sync()?;
+        }
+
+        Ok(old_folder)
+    }
+
     fn config_path() -> Result<PathBuf, Error> {
         if let Some(config_path) = dirs::config_dir() {
             Ok(config_path.join("p2p").join("config.toml"))

@@ -11,7 +11,7 @@ use walkdir::DirEntry;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct WatchedFolder {
     id: u32,
-    path: PathBuf,
+    pub path: PathBuf,
 }
 
 impl WatchedFolder {

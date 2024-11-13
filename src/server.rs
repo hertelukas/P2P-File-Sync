@@ -1,7 +1,7 @@
 use axum::{
     extract::State,
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use reqwest::StatusCode;
@@ -23,6 +23,7 @@ pub fn app(config: MutexConf, tx_watch_command: Sender<WatchCommand>) -> Router 
         .route("/", get(get_index))
         .route("/folder", post(post_folder))
         .route("/folder", delete(delete_folder))
+        .route("/folder", put(put_folder))
         .with_state(AppState {
             config,
             tx_watch_command,
@@ -88,6 +89,45 @@ async fn delete_folder(
     {
         Ok(_) => (),
         Err(e) => log::warn!("Could not notify file watcher of change: {e}"),
+    }
+
+    (StatusCode::OK, Json(()))
+}
+
+#[axum::debug_handler]
+async fn put_folder(
+    State(state): State<AppState>,
+    Json(folder): Json<WatchedFolder>,
+) -> impl IntoResponse {
+    log::info!("Received put for {:?}", folder);
+
+    if let Some(old_folder) = {
+        let mut config = state.config.lock().unwrap();
+
+        match config.update_folder_sync(folder.clone(), true) {
+            Ok(old) => old,
+            Err(e) => {
+                log::warn!("Failed to update folder {e}");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(()));
+            }
+        }
+    } {
+        match state
+            .tx_watch_command
+            .send(WatchCommand::Remove { folder: old_folder })
+            .await
+        {
+            Ok(_) => match state
+                .tx_watch_command
+                .send(WatchCommand::Add { folder })
+                .await
+            {
+                Ok(_) => (),
+                Err(e) => log::warn!("Could not notify file watcher of change: {e}"),
+            },
+
+            Err(e) => log::warn!("Could not nofiy file watcher of change: {e}"),
+        }
     }
 
     (StatusCode::OK, Json(()))
