@@ -53,11 +53,15 @@ pub async fn watch(
             Some(command) = cmd_rx.recv() => match command {
                 WatchCommand::Add { folder } => {
                     log::info!("Watching new folder {:?}", &folder);
-                    watcher.watch(folder.path(), RecursiveMode::Recursive)?;
+                    if let Err(e) = watcher.watch(folder.path(), RecursiveMode::Recursive) {
+                        log::warn!("Failed to start watching: {e}");
+                    }
                 },
                 WatchCommand::Remove { folder } => {
                     log::info!("No longer watching {folder:?}");
-                    watcher.unwatch(folder.path())?;
+                    if let Err(e) = watcher.unwatch(folder.path()) {
+                        log::warn!("Failed to stop watching: {e}");
+                    };
                 },
             }
         }
