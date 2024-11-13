@@ -174,6 +174,17 @@ impl Config {
         Ok(())
     }
 
+    /// Removes a folder from the config, and also write to file if `store` is true
+    pub fn delete_folder_sync(&mut self, id: u32, store: bool) -> Result<(), Error> {
+        self.paths.retain(|f| f.id() != id);
+
+        if store {
+            self.store_sync()?;
+        }
+
+        Ok(())
+    }
+
     fn config_path() -> Result<PathBuf, Error> {
         if let Some(config_path) = dirs::config_dir() {
             Ok(config_path.join("p2p").join("config.toml"))

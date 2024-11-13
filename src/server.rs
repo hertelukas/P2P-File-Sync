@@ -1,7 +1,7 @@
 use axum::{
     extract::State,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use reqwest::StatusCode;
@@ -22,6 +22,7 @@ pub fn app(config: MutexConf, tx_watch_command: Sender<WatchCommand>) -> Router 
     Router::new()
         .route("/", get(get_index))
         .route("/folder", post(post_folder))
+        .route("/folder", delete(delete_folder))
         .with_state(AppState {
             config,
             tx_watch_command,
@@ -62,4 +63,32 @@ async fn post_folder(
         }
     }
     (StatusCode::CREATED, Json(()))
+}
+
+#[axum::debug_handler]
+async fn delete_folder(
+    State(state): State<AppState>,
+    Json(folder): Json<WatchedFolder>,
+) -> impl IntoResponse {
+    log::info!("Received delete for {:?}", folder);
+
+    {
+        let mut config = state.config.lock().unwrap();
+
+        if let Err(e) = config.delete_folder_sync(folder.id(), true) {
+            log::warn!("Failed to delete folder {e}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(()));
+        }
+    }
+
+    match state
+        .tx_watch_command
+        .send(WatchCommand::Remove { folder })
+        .await
+    {
+        Ok(_) => (),
+        Err(e) => log::warn!("Could not notify file watcher of change: {e}"),
+    }
+
+    (StatusCode::OK, Json(()))
 }
