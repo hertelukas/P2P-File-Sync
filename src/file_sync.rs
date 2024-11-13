@@ -392,11 +392,26 @@ VALUES (?, ?, ?, ?, ?)
     }
 }
 
+/// Synchronizes the file state when `rx` receives a message.
 pub async fn sync_files(
+    pool: Arc<sqlx::SqlitePool>,
+    config: MutexConf,
+    rx: Receiver<()>,
+    port: u16,
+) {
+    sync_files_internal(pool, config, rx, port, false).await;
+}
+
+/// Synchorinzes all files which are not at the newest state when
+/// receiving a message from `rx`. If `once` is true, we will
+/// only synchronize the files which are out-of-date in our database,
+/// but will not wait for later resyncs.
+async fn sync_files_internal(
     pool: Arc<sqlx::SqlitePool>,
     config: MutexConf,
     mut rx: Receiver<()>,
     port: u16,
+    once: bool,
 ) {
     loop {
         // Block on waiting for some change that motivates us to sync
@@ -427,12 +442,22 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
             // Maybe a bit inefficient if the peer is offline
             if let Ok(stream) = TcpStream::connect((file.global_peer.clone(), port)).await {
                 log::info!("Connected to {:?} for file sync", file.global_peer);
+                let base_path: PathBuf = {
+                    let lock = config.lock().unwrap();
+                    lock.get_path(file.folder_id.try_into().unwrap()).unwrap()
+                };
 
                 let mut connection = Connection::new(stream);
                 connection
                     .write_frame(&Frame::RequestFile {
                         folder_id: file.folder_id.try_into().unwrap(),
-                        path: file.path.clone(),
+                        path: File::get_relative_path(
+                            &base_path.to_string_lossy(),
+                            &file.path.clone(),
+                        )
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string(),
                     })
                     .await
                     .unwrap();
@@ -440,15 +465,9 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
                 if let Some(frame) = connection.read_frame().await.unwrap() {
                     match frame {
                         Frame::File { size: _, data } => {
-                            let base_path = {
-                                let lock = config.lock().unwrap();
-                                lock.get_path(file.folder_id.try_into().unwrap())
-                            };
-                            if let Some(base_path) = base_path {
-                                let path =
-                                    File::get_full_path(&base_path.to_string_lossy(), &file.path);
-                                fs::write(path, data).unwrap();
-                            }
+                            let path =
+                                File::get_full_path(&base_path.to_string_lossy(), &file.path);
+                            fs::write(path, data).unwrap();
                         }
                         _ => log::warn!(
                             "Unexpected frame {:?} received while waiting for file request",
@@ -457,6 +476,9 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
                     }
                 }
             }
+        }
+        if once {
+            return;
         }
     }
 }
@@ -568,7 +590,7 @@ mod tests {
         sqlite::{SqliteConnectOptions, SqlitePoolOptions},
         SqlitePool,
     };
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::{fs::File, str::FromStr};
     use tempfile::{tempdir, TempDir};
     use tokio::sync::mpsc;
@@ -978,5 +1000,121 @@ FROM files
         assert!(client_files.iter().any(|f| f.path.ends_with("foo2.txt")));
         assert!(client_files.iter().any(|f| f.path.ends_with("bar2.txt")));
         assert!(client_files.iter().any(|f| f.path.ends_with("baz2.txt")));
+    }
+
+    #[tokio::test]
+    async fn test_file_sync() {
+        init();
+        let (client_pool, server_pool) = create_two_dbs().await;
+        // Client setup
+        let client_dir = create_test_dir();
+        do_full_scan(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
+            .await
+            .unwrap();
+
+        let client_config = Arc::new(Mutex::new(Config {
+            paths: vec![WatchedFolder::new_full(1, client_dir.path())],
+            peers: vec![Peer {
+                ip: [127, 0, 0, 1].into(),
+                folders: vec![1],
+            }],
+        }));
+
+        // Server setup
+        let server_dir = tempdir().unwrap();
+        do_full_scan(server_pool.clone(), &server_dir.path().to_path_buf(), 1)
+            .await
+            .unwrap();
+
+        let server_config = Arc::new(Mutex::new(Config {
+            paths: vec![WatchedFolder::new_full(1, server_dir.path())],
+            peers: vec![Peer {
+                ip: [127, 0, 0, 1].into(),
+                folders: vec![1],
+            }],
+        }));
+
+        let (tx_client_sync_cmd, rx_client) = mpsc::channel(1);
+        let (tx_server_sync_cmd, rx_server) = mpsc::channel(1);
+
+        // Start trying to sync our files
+        let client_pool_handle = client_pool.clone();
+        let client_config_handle = client_config.clone();
+        tokio::spawn(async move {
+            sync_files(client_pool_handle, client_config_handle, rx_client, 1238).await;
+        });
+
+        let server_pool_handle = server_pool.clone();
+        let server_config_handle = server_config.clone();
+        let server_sync_files = tokio::spawn(async move {
+            sync_files_internal(
+                server_pool_handle,
+                server_config_handle,
+                rx_server,
+                1239,
+                true,
+            )
+            .await;
+        });
+
+        // He also wants to listen for file syncs
+        let client_config_handle = client_config.clone();
+        tokio::spawn(async move {
+            listen_file_sync(client_config_handle, 1239).await;
+        });
+
+        // So does the server
+        let server_config_handle = server_config.clone();
+        tokio::spawn(async move {
+            listen_file_sync(server_config_handle, 1238).await;
+        });
+
+        // Server starts listening to the client for database sync
+        tokio::spawn(async move {
+            wait_incoming(server_pool.clone(), server_config, tx_server_sync_cmd, 1237).await;
+        });
+
+        // Run Client
+        let client_pool_handle = client_pool.clone();
+        let client_config_handle = client_config.clone();
+        tokio::spawn(async move {
+            log::info!("Trying to connect...");
+            try_connect(
+                client_pool_handle,
+                client_config_handle,
+                tx_client_sync_cmd,
+                1237,
+            )
+            .await;
+        });
+
+        // Wait until we synced all files
+        server_sync_files.await.unwrap();
+
+        let files = WalkDir::new(server_dir.path())
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.metadata().map(|m| m.is_file()).unwrap_or(false))
+            .collect::<Vec<_>>();
+
+        assert_eq!(files.len(), 2);
+
+        let foo_file_path = server_dir.path().join("foo.txt");
+        let bar_file_path = server_dir.path().join("bar.txt");
+
+        let mut foo_file = File::open(foo_file_path).unwrap();
+        let mut bar_file = File::open(bar_file_path).unwrap();
+
+        let mut foo_content = String::new();
+        let mut bar_content = String::new();
+
+        foo_file.read_to_string(&mut foo_content).unwrap();
+        bar_file.read_to_string(&mut bar_content).unwrap();
+
+        drop(foo_file);
+        drop(bar_file);
+
+        assert_eq!(foo_content, "foo\n");
+        assert_eq!(bar_content, "bar\n");
     }
 }
