@@ -12,6 +12,7 @@ pub enum CurrentScreen {
     EditPeer(Peer),
     CreateFolder(EditFolderState),
     CreatePeer,
+    DeleteFolder(WatchedFolder),
 }
 
 #[derive(Default)]
@@ -306,6 +307,24 @@ impl App {
         self.current_screen = CurrentScreen::CreatePeer;
     }
 
+    pub fn open_delete_folder(&mut self) {
+        // Do nothing, if we don't have a folder selected
+        if let Some(selected_folder) = self.selected_folder {
+            // First, we clone our WatchedFolder and drop the mutex
+            let folder: WatchedFolder = {
+                if let Some(ref config) = self.config {
+                    config.paths[selected_folder].clone()
+                } else {
+                    // Do nothing if we have no config
+                    return;
+                }
+            };
+
+            // Now, update our folder
+            self.current_screen = CurrentScreen::DeleteFolder(folder.into());
+        }
+    }
+
     pub fn discard(&mut self) {
         self.current_screen = CurrentScreen::Main;
     }
@@ -323,6 +342,35 @@ impl App {
             config.peers.len()
         } else {
             0
+        }
+    }
+
+    pub async fn delete_folder(&mut self) {
+        if let CurrentScreen::DeleteFolder(folder) = &self.current_screen {
+            match self
+                .client
+                .delete(format!("{}/folder", self.address))
+                .json(&folder)
+                .send()
+                .await
+            {
+                Ok(_) => {
+                    // Delete our folder from our local state
+                    if let Some(ref mut config) = self.config {
+                        // Never fails, as we do not store
+                        config.delete_folder_sync(folder.id(), false).unwrap();
+                    }
+                    self.current_screen = CurrentScreen::Main;
+                    self.current_mode = CurrentMode::Normal;
+                }
+                Err(e) => {
+                    self.current_screen = CurrentScreen::Error(format!("Server unreachable: {e}"))
+                }
+            }
+        } else {
+            self.current_screen = CurrentScreen::Error(
+                "Can only delete folder through the \"Delete Folder\" prompt".to_string(),
+            )
         }
     }
 

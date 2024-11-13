@@ -117,6 +117,10 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                             CurrentFocus::Folder => app.open_create_folder(),
                             CurrentFocus::Peer => app.open_create_peer(),
                         },
+                        KeyCode::Delete | KeyCode::Char('d') => match app.current_focus {
+                            CurrentFocus::Folder => app.open_delete_folder(),
+                            CurrentFocus::Peer => app.open_delete_folder(),
+                        },
                         KeyCode::Tab => {
                             app.toggle_focus();
                         }
@@ -146,7 +150,10 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                         KeyCode::Esc => app.discard(),
                         _ => {}
                     },
-
+                    CurrentScreen::DeleteFolder(_) => match key.code {
+                        KeyCode::Char('y') => app.delete_folder().await,
+                        _ => app.discard(),
+                    },
                     _ => {}
                 },
                 CurrentMode::Insert => match app.current_screen {
@@ -180,6 +187,10 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                             KeyCode::Tab => folder_state.toggle_focus(),
                             _ => {}
                         },
+                    },
+                    CurrentScreen::DeleteFolder(_) => match key.code {
+                        KeyCode::Char('y') => app.delete_folder().await,
+                        _ => app.discard(),
                     },
                     _ => {}
                 },

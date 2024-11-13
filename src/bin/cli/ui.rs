@@ -66,6 +66,32 @@ pub fn ui(frame: &mut Frame, app: &App) {
             let area = centered_rect(50, 50, frame.area());
             frame.render_widget(popup_block, area);
         }
+        CurrentScreen::DeleteFolder(ref folder) => {
+            let popup_block = create_popup_block(
+                app,
+                format!("Delete {}", folder.path().to_string_lossy()),
+                false,
+            )
+            .style(Style::default().fg(Color::Red));
+
+            let help_text = Text::from(Line::from(vec![
+                "Press ".into(),
+                "y".bold(),
+                " to remove ".into(),
+                folder.path().to_string_lossy().into(),
+                " from the synchronised folders. This will not delete the folder itself. ".into(),
+                "Press ".into(),
+                "n".bold(),
+                " to abort.".into(),
+            ]));
+            let help_message = Paragraph::new(help_text)
+                .block(popup_block)
+                .alignment(ratatui::layout::Alignment::Center)
+                .wrap(Wrap { trim: true });
+
+            let area = centered_rect(50, 50, frame.area());
+            frame.render_widget(help_message, area);
+        }
     }
 }
 
