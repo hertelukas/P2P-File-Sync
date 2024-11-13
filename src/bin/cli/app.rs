@@ -345,6 +345,41 @@ impl App {
         }
     }
 
+    pub async fn put_folder(&mut self) {
+        if let CurrentScreen::EditFolder(folder) = &self.current_screen {
+            if let Ok(folder) = folder.try_into() as Result<WatchedFolder, _> {
+                match self
+                    .client
+                    .put(format!("{}/folder", self.address))
+                    .json(&folder)
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        // Update our own folder
+                        if let Some(ref mut config) = self.config {
+                            config.update_folder_sync(folder, false).unwrap();
+                        }
+
+                        self.current_screen = CurrentScreen::Main;
+                        self.current_mode = CurrentMode::Normal;
+                    }
+                    Err(e) => {
+                        self.current_screen =
+                            CurrentScreen::Error(format!("Server unreachable: {e}"))
+                    }
+                }
+            } else {
+                self.current_screen =
+                    CurrentScreen::Error(format!("Failed to create valid folder"));
+            }
+        } else {
+            self.current_screen = CurrentScreen::Error(
+                "Can only update folder through the \"Edit Folder\" prompt".to_string(),
+            )
+        }
+    }
+
     pub async fn delete_folder(&mut self) {
         if let CurrentScreen::DeleteFolder(folder) = &self.current_screen {
             match self

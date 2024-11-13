@@ -140,7 +140,7 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                             // Match again, post or update
                             match app.current_screen {
                                 CurrentScreen::CreateFolder(_) => app.post_folder().await,
-                                CurrentScreen::EditFolder(_) => todo!(),
+                                CurrentScreen::EditFolder(_) => app.put_folder().await,
                                 _ => {}
                             }
                         }
@@ -180,7 +180,7 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                                 // Match again, as we might want to post or update
                                 match app.current_screen {
                                     CurrentScreen::CreateFolder(_) => app.post_folder().await,
-                                    CurrentScreen::EditFolder(_) => todo!(),
+                                    CurrentScreen::EditFolder(_) => app.put_folder().await,
                                     _ => {}
                                 }
                             }
