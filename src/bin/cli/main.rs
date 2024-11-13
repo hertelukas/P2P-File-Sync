@@ -94,6 +94,8 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                 },
             }
 
+            // Ensure that we do not react with two different
+            // actions on a key press
             if handled {
                 continue;
             }
@@ -154,6 +156,10 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                         KeyCode::Char('y') => app.delete_folder().await,
                         _ => app.discard(),
                     },
+                    CurrentScreen::Error(_) => match key.code {
+                        KeyCode::Esc => app.discard(),
+                        _ => {}
+                    },
                     _ => {}
                 },
                 CurrentMode::Insert => match app.current_screen {
@@ -191,6 +197,10 @@ async fn run<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()
                     CurrentScreen::DeleteFolder(_) => match key.code {
                         KeyCode::Char('y') => app.delete_folder().await,
                         _ => app.discard(),
+                    },
+                    CurrentScreen::Error(_) => match key.code {
+                        KeyCode::Esc => app.discard(),
+                        _ => {}
                     },
                     _ => {}
                 },
