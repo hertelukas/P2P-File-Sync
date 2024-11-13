@@ -84,6 +84,17 @@ pub async fn wait_incoming(
     tx_sync_cmd: Sender<()>,
     port: u16,
 ) {
+    wait_incoming_intern(pool, config, tx_sync_cmd, port, false).await;
+}
+
+/// Internal function which allows us to test a single connection
+async fn wait_incoming_intern(
+    pool: Arc<sqlx::SqlitePool>,
+    config: MutexConf,
+    tx_sync_cmd: Sender<()>,
+    port: u16,
+    once: bool,
+) {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
@@ -97,9 +108,14 @@ pub async fn wait_incoming(
                 let pool = pool.clone();
                 let tx_handle = tx_sync_cmd.clone();
 
-                tokio::spawn(async move {
+                let t = tokio::spawn(async move {
                     handle_connection(stream, config, pool, false, tx_handle).await;
                 });
+
+                if once {
+                    t.await.unwrap();
+                    break;
+                }
             }
             Err(e) => log::warn!("Failed to accept connection {}", e),
         }
@@ -548,13 +564,23 @@ pub async fn do_full_scan(
 
 #[cfg(test)]
 mod tests {
-    use sqlx::SqlitePool;
-    use std::fs::File;
+    use sqlx::{
+        sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+        SqlitePool,
+    };
     use std::io::Write;
+    use std::{fs::File, str::FromStr};
     use tempfile::{tempdir, TempDir};
+    use tokio::sync::mpsc;
+
+    use crate::{Peer, WatchedFolder};
 
     use super::*;
 
+    /// Enables logging during test execution
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
     /// Creates a new temporary directory.
     ///
     /// When TempDir goes out of scope, it may fail to delete the
@@ -586,6 +612,32 @@ FROM files
         .fetch_all(pool)
         .await
         .unwrap()
+    }
+
+    /// Creates two empty databases, so we can test database synchronization
+    async fn create_two_dbs() -> (Arc<SqlitePool>, Arc<SqlitePool>) {
+        let client_db_connection_options =
+            SqliteConnectOptions::from_str("sqlite::memory:").unwrap();
+        let server_db_connection_options =
+            SqliteConnectOptions::from_str("sqlite::memory:").unwrap();
+        let client_pool = Arc::new(
+            SqlitePoolOptions::new()
+                .connect_with(client_db_connection_options)
+                .await
+                .unwrap(),
+        );
+
+        let server_pool = Arc::new(
+            SqlitePoolOptions::new()
+                .connect_with(server_db_connection_options)
+                .await
+                .unwrap(),
+        );
+
+        sqlx::migrate!().run(&*client_pool).await.unwrap();
+        sqlx::migrate!().run(&*server_pool).await.unwrap();
+
+        (client_pool, server_pool)
     }
 
     #[sqlx::test]
@@ -622,7 +674,25 @@ FROM files
     }
 
     #[sqlx::test]
-    async fn recursive_folder_test(pool: SqlitePool) {
+    async fn test_empty_file_scan(pool: SqlitePool) {
+        let dir = tempdir().unwrap();
+        let foo_file_path = dir.path().join("foo.txt");
+        let foo_file = File::create(foo_file_path).unwrap();
+        // Probably unnecessary? Not sure if value is dropped if unnamed though
+        drop(foo_file);
+
+        let pool = Arc::new(pool);
+        do_full_scan(pool.clone(), &dir.path().to_path_buf(), 6)
+            .await
+            .unwrap();
+
+        let files = get_all_files(&*pool).await;
+        assert_eq!(files.len(), 1);
+        assert!(files.into_iter().all(|f| f.path.contains("foo.txt")));
+    }
+
+    #[sqlx::test]
+    async fn test_recursive_folder(pool: SqlitePool) {
         let dir = create_test_dir();
         let pool = Arc::new(pool);
         let nested_dir_path = dir.path().join("sub");
@@ -640,5 +710,273 @@ FROM files
 
         assert_eq!(files.len(), 3);
         assert!(files.into_iter().any(|f| f.path.contains("third")))
+    }
+
+    #[tokio::test]
+    async fn test_sync_db() {
+        init();
+        let (client_pool, server_pool) = create_two_dbs().await;
+
+        let client_dir = create_test_dir();
+        do_full_scan(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
+            .await
+            .unwrap();
+
+        assert_eq!(get_all_files(&*client_pool).await.len(), 2);
+        assert_eq!(get_all_files(&*server_pool).await.len(), 0);
+
+        let client_config = Arc::new(Mutex::new(Config {
+            paths: vec![WatchedFolder::new_full(1, client_dir.path())],
+            peers: vec![Peer {
+                ip: [127, 0, 0, 1].into(),
+                folders: vec![1],
+            }],
+        }));
+
+        let server_dir = tempdir().unwrap();
+        let server_config = Arc::new(Mutex::new(Config {
+            paths: vec![WatchedFolder::new_full(1, server_dir.path())],
+            peers: vec![Peer {
+                ip: [127, 0, 0, 1].into(),
+                folders: vec![1],
+            }],
+        }));
+
+        let (tx_client_sync_cmd, mut rx_client) = mpsc::channel(1);
+        let (tx_server_sync_cmd, mut rx_server) = mpsc::channel(1);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    Some(_) = rx_client.recv() => {},
+                    Some(_) = rx_server.recv() => {}
+                }
+            }
+        });
+        // Client
+        let client_pool_handle = client_pool.clone();
+        tokio::spawn(async move {
+            try_connect(client_pool_handle, client_config, tx_client_sync_cmd, 1234).await;
+        });
+
+        wait_incoming_intern(
+            server_pool.clone(),
+            server_config,
+            tx_server_sync_cmd,
+            1234,
+            true,
+        )
+        .await;
+
+        // Make sure the "server" has all the latest info
+        assert_eq!(get_all_files(&*server_pool).await.len(), 2);
+        assert!(get_all_files(&*server_pool)
+            .await
+            .into_iter()
+            .any(|f| f.path.contains("foo.txt")));
+        assert!(get_all_files(&*server_pool)
+            .await
+            .into_iter()
+            .any(|f| f.path.contains("bar.txt")));
+        assert!(get_all_files(&*server_pool)
+            .await
+            .into_iter()
+            .all(|f| f.local_hash.is_none()));
+        assert!(get_all_files(&*server_pool)
+            .await
+            .into_iter()
+            .all(|f| f.local_last_modified.is_none()));
+        assert!(get_all_files(&*server_pool)
+            .await
+            .into_iter()
+            .all(|f| f.global_peer == "127.0.0.1"));
+
+        // Make sure the "client" did not change
+        assert!(get_all_files(&*client_pool)
+            .await
+            .into_iter()
+            .all(|f| f.global_peer == "0"));
+        assert_eq!(get_all_files(&*client_pool).await.len(), 2)
+    }
+
+    #[tokio::test]
+    async fn test_sync_empty_db() {
+        init();
+        let (client_pool, server_pool) = create_two_dbs().await;
+
+        let client_dir = tempdir().unwrap();
+        do_full_scan(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
+            .await
+            .unwrap();
+
+        assert_eq!(get_all_files(&*client_pool).await.len(), 0);
+        assert_eq!(get_all_files(&*server_pool).await.len(), 0);
+
+        let client_config = Arc::new(Mutex::new(Config {
+            paths: vec![WatchedFolder::new_full(1, client_dir.path())],
+            peers: vec![Peer {
+                ip: [127, 0, 0, 1].into(),
+                folders: vec![1],
+            }],
+        }));
+
+        let server_dir = tempdir().unwrap();
+        let server_config = Arc::new(Mutex::new(Config {
+            paths: vec![WatchedFolder::new_full(1, server_dir.path())],
+            peers: vec![Peer {
+                ip: [127, 0, 0, 1].into(),
+                folders: vec![1],
+            }],
+        }));
+
+        let (tx_client_sync_cmd, mut rx_client) = mpsc::channel(1);
+        let (tx_server_sync_cmd, mut rx_server) = mpsc::channel(1);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    Some(_) = rx_client.recv() => {},
+                    Some(_) = rx_server.recv() => {}
+                }
+            }
+        });
+        // Client
+        let client_pool_handle = client_pool.clone();
+        tokio::spawn(async move {
+            try_connect(client_pool_handle, client_config, tx_client_sync_cmd, 1235).await;
+        });
+
+        wait_incoming_intern(
+            server_pool.clone(),
+            server_config,
+            tx_server_sync_cmd,
+            1235,
+            true,
+        )
+        .await;
+
+        // "Server" still should have nothing
+        assert_eq!(get_all_files(&*server_pool).await.len(), 0);
+
+        // "Client" neither
+        assert_eq!(get_all_files(&*client_pool).await.len(), 0)
+    }
+
+    #[tokio::test]
+    async fn test_sync_mutual_db() {
+        init();
+        let (client_pool, server_pool) = create_two_dbs().await;
+
+        let client_dir = create_test_dir();
+        do_full_scan(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
+            .await
+            .unwrap();
+
+        assert_eq!(get_all_files(&*client_pool).await.len(), 2);
+
+        // Also fill the server with a couple of files
+        let server_dir = tempdir().unwrap();
+
+        let foo_file_path = server_dir.path().join("foo2.txt");
+        let bar_file_path = server_dir.path().join("bar2.txt");
+        let baz_file_path = server_dir.path().join("baz2.txt");
+
+        let mut foo_file = File::create(foo_file_path).unwrap();
+        let mut bar_file = File::create(bar_file_path).unwrap();
+        let baz_file = File::create(baz_file_path).unwrap();
+
+        writeln!(foo_file, "foo").unwrap();
+        writeln!(bar_file, "bar").unwrap();
+        // Close all file handles, so the tempdir gets deleted when it goes
+        // out of scope
+        drop(foo_file);
+        drop(bar_file);
+        drop(baz_file);
+
+        do_full_scan(server_pool.clone(), &server_dir.path().to_path_buf(), 1)
+            .await
+            .unwrap();
+
+        assert_eq!(get_all_files(&*server_pool).await.len(), 3);
+
+        let client_config = Arc::new(Mutex::new(Config {
+            paths: vec![WatchedFolder::new_full(1, client_dir.path())],
+            peers: vec![Peer {
+                ip: [127, 0, 0, 1].into(),
+                folders: vec![1],
+            }],
+        }));
+
+        let server_config = Arc::new(Mutex::new(Config {
+            paths: vec![WatchedFolder::new_full(1, server_dir.path())],
+            peers: vec![Peer {
+                ip: [127, 0, 0, 1].into(),
+                folders: vec![1],
+            }],
+        }));
+
+        let (tx_client_sync_cmd, mut rx_client) = mpsc::channel(1);
+        let (tx_server_sync_cmd, mut rx_server) = mpsc::channel(1);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    Some(_) = rx_client.recv() => {},
+                    Some(_) = rx_server.recv() => {}
+                }
+            }
+        });
+        // Client
+        let client_pool_handle = client_pool.clone();
+        tokio::spawn(async move {
+            try_connect(client_pool_handle, client_config, tx_client_sync_cmd, 1236).await;
+        });
+
+        wait_incoming_intern(
+            server_pool.clone(),
+            server_config,
+            tx_server_sync_cmd,
+            1236,
+            true,
+        )
+        .await;
+
+        let server_files = get_all_files(&*server_pool).await;
+        assert_eq!(server_files.len(), 5);
+        assert!(server_files.iter().any(|f| f.path.ends_with("foo.txt")));
+        assert!(server_files.iter().any(|f| f.path.ends_with("bar.txt")));
+        assert!(server_files.iter().any(|f| f.path.ends_with("foo2.txt")));
+        assert!(server_files.iter().any(|f| f.path.ends_with("bar2.txt")));
+        assert!(server_files.iter().any(|f| f.path.ends_with("baz2.txt")));
+        assert!(server_files
+            .iter()
+            .filter(|f| f.path.ends_with("foo.txt"))
+            .all(|f| f.local_hash.is_none()));
+        assert!(server_files
+            .iter()
+            .filter(|f| f.path.ends_with("bar.txt"))
+            .all(|f| f.local_last_modified.is_none()));
+        assert!(server_files
+            .iter()
+            .filter(|f| f.path.ends_with("foo2.txt"))
+            .all(|f| f.local_last_modified.is_some()));
+
+        assert!(server_files
+            .iter()
+            .filter(|f| f.path.ends_with("bar2.txt"))
+            .all(|f| f.local_last_modified.is_some()));
+
+        assert!(server_files
+            .iter()
+            .filter(|f| f.path.ends_with("baz2.txt"))
+            .all(|f| f.local_last_modified.is_some()));
+
+        let client_files = get_all_files(&*client_pool).await;
+        assert_eq!(client_files.len(), 5);
+        assert!(client_files.iter().any(|f| f.path.ends_with("foo.txt")));
+        assert!(client_files.iter().any(|f| f.path.ends_with("bar.txt")));
+        assert!(client_files.iter().any(|f| f.path.ends_with("foo2.txt")));
+        assert!(client_files.iter().any(|f| f.path.ends_with("bar2.txt")));
+        assert!(client_files.iter().any(|f| f.path.ends_with("baz2.txt")));
     }
 }
