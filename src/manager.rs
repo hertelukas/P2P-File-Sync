@@ -7,7 +7,8 @@ use tokio::task;
 
 use crate::config::Config;
 use crate::file_sync::{
-    do_full_scan, do_scan, listen_file_sync, sync_files, try_connect, wait_incoming,
+    announce_change, do_full_scan, do_scan, listen_file_sync, sync_files, try_connect,
+    wait_incoming,
 };
 use crate::server::app;
 use crate::{database, watcher};
@@ -59,6 +60,7 @@ pub async fn run() -> eyre::Result<()> {
                 change_handler_config_handle.clone(),
                 change_handler_pool_handle.clone(),
                 path,
+                file_sync_port,
             )
             .await;
         }
@@ -118,7 +120,12 @@ pub async fn run() -> eyre::Result<()> {
     Ok(())
 }
 
-async fn handle_change(config: Arc<Mutex<Config>>, pool: Arc<sqlx::SqlitePool>, path: PathBuf) {
+async fn handle_change(
+    config: Arc<Mutex<Config>>,
+    pool: Arc<sqlx::SqlitePool>,
+    path: PathBuf,
+    port: u16,
+) {
     let folder_id = {
         let lock = config.lock().unwrap();
         let files: Vec<_> = lock
@@ -135,10 +142,44 @@ async fn handle_change(config: Arc<Mutex<Config>>, pool: Arc<sqlx::SqlitePool>, 
     };
 
     // Update database
-    if do_scan(pool, &path, folder_id).await.is_err() {
-        log::warn!("Failed to react to update");
-        return;
+    match do_scan(pool, &path, folder_id).await {
+        Ok(file) => {
+            // Propagate our changes to other peers, so they update their db
+            // and then request the new file from us
+
+            let (peers, base_path) = {
+                let lock = config.lock().unwrap();
+                (lock.peers.clone(), lock.get_path(folder_id))
+            };
+
+            if let Some(base_path) = base_path {
+                if let Some(relative_path) = crate::types::File::get_relative_path(
+                    &path.to_string_lossy(),
+                    &base_path.to_string_lossy(),
+                ) {
+                    for peer in peers
+                        .into_iter()
+                        .filter(|p| p.folders.contains(&folder_id))
+                        .collect::<Vec<_>>()
+                    {
+                        announce_change(
+                            peer.ip,
+                            file.clone(),
+                            relative_path.to_string_lossy().to_string(),
+                            folder_id,
+                            port,
+                        )
+                        .await;
+                    }
+                } else {
+                    log::warn!("Unable to load relative path for file: Not announcing changes");
+                }
+            } else {
+                log::warn!("Cannot find base path of file");
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to react to update: {e}");
+        }
     }
-    // TODO Propagate our changes to other peers, so they update their db
-    // and then request the new file from us
 }

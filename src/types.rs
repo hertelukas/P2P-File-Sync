@@ -83,7 +83,7 @@ impl fmt::Display for Peer {
     }
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Clone)]
 pub struct File {
     pub folder_id: i64,
     pub path: String,

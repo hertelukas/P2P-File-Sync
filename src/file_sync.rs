@@ -1,5 +1,6 @@
 use std::{
     fs,
+    net::IpAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
@@ -598,6 +599,41 @@ VALUES (?, ?, ?, ?, ?)
     }
 }
 
+pub async fn announce_change(
+    to: IpAddr,
+    file: File,
+    relative_path: String,
+    folder_id: u32,
+    port: u16,
+) {
+    if let Ok(stream) = TcpStream::connect((to, port)).await {
+        let mut connection = Connection::new(stream);
+
+        if let Err(e) = connection.write_frame(&Frame::DbSync { folder_id }).await {
+            log::warn!("Failed to send update to {to}: {e}");
+            return;
+        }
+
+        if let Ok(Some(Frame::Yes)) = connection.read_frame().await {
+            if let Err(e) = connection
+                .write_frame(&Frame::InitiatorGlobal {
+                    global_hash: file.global_hash.into(),
+                    global_last_modified: file.global_last_modified,
+                    global_peer: file.global_peer,
+                    path: relative_path,
+                })
+                .await
+            {
+                log::warn!("Failed to send file data to {to}: {e}");
+            }
+        } else {
+            log::warn!("Peer {to} does not seem to be interested in file update")
+        }
+    } else {
+        log::warn!("Could not notify peer about change!");
+    }
+}
+
 /// Updates the database by recursively iterating over all files in the path.
 /// This is done by following these steps:
 /// 1. Check if the file is tracked: If not, insert and done.
@@ -656,7 +692,7 @@ pub async fn do_scan(
     pool: Arc<sqlx::SqlitePool>,
     path: &PathBuf,
     folder_id: u32,
-) -> Result<(), Error> {
+) -> Result<File, Error> {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(e) => {
@@ -683,7 +719,21 @@ pub async fn do_scan(
     )
     .await?;
 
-    Ok(())
+    let s = path.to_string_lossy().to_string();
+    sqlx::query_as!(
+        File,
+        r#"
+SELECT *
+FROM files
+WHERE path = ? AND folder_id = ?
+"#,
+        s,
+        folder_id
+    )
+    .fetch_one(&*pool)
+    .await
+    .map_err(crate::database::Error::from)
+    .map_err(Error::from)
 }
 
 #[cfg(test)]
