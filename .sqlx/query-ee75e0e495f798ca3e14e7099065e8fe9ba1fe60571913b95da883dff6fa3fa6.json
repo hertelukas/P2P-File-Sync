@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT local_last_modified\nFROM files\nWHERE path = ?\n",
+  "query": "\nSELECT local_last_modified\nFROM files\nWHERE path = ? AND folder_id = ?\n",
   "describe": {
     "columns": [
       {
@@ -10,11 +10,11 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       true
     ]
   },
-  "hash": "fa64cc3d4e20caf9ac82c99e126c8948d4bbd9ae8dd8e99cd7d68fc1def97efe"
+  "hash": "ee75e0e495f798ca3e14e7099065e8fe9ba1fe60571913b95da883dff6fa3fa6"
 }

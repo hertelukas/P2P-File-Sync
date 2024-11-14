@@ -6,7 +6,9 @@ use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::config::Config;
-use crate::file_sync::{do_full_scan, listen_file_sync, sync_files, try_connect, wait_incoming};
+use crate::file_sync::{
+    do_full_scan, do_scan, listen_file_sync, sync_files, try_connect, wait_incoming,
+};
 use crate::server::app;
 use crate::{database, watcher};
 
@@ -49,9 +51,16 @@ pub async fn run() -> eyre::Result<()> {
     });
 
     // Task reacting to changes
+    let change_handler_pool_handle = pool.clone();
+    let change_handler_config_handle = config.clone();
     task::spawn(async move {
         while let Some(path) = rx_change.recv().await {
-            handle_change(path).await;
+            handle_change(
+                change_handler_config_handle.clone(),
+                change_handler_pool_handle.clone(),
+                path,
+            )
+            .await;
         }
     });
 
@@ -102,6 +111,21 @@ pub async fn run() -> eyre::Result<()> {
     Ok(())
 }
 
-async fn handle_change(path: PathBuf) {
-    log::info!("Handling {path:?}");
+async fn handle_change(config: Arc<Mutex<Config>>, pool: Arc<sqlx::SqlitePool>, path: PathBuf) {
+    let folder_id = {
+        let lock = config.lock().unwrap();
+        lock.paths
+            .iter()
+            .filter(|p| p.path == path)
+            .collect::<Vec<_>>()[0]
+            .id()
+    };
+
+    // Update database
+    if do_scan(pool, &path, folder_id).await.is_err() {
+        log::warn!("Failed to react to update");
+        return;
+    }
+    // TODO Propagate our changes to other peers, so they update their db
+    // and then request the new file from us
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE files\nSET global_hash = ?, global_last_modified = ?, global_peer = \"0\"\nWHERE path = ? AND ? > global_last_modified AND folder_id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "65640417ba83e311e41e85b0cc02052a0b2e9aea9d96ec6ef9314e1277ae164d"
+}

@@ -2,7 +2,7 @@ use std::{
     fmt,
     net::IpAddr,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -115,7 +115,14 @@ impl File {
             .metadata()
             .ok()
             .and_then(|metadata| metadata.modified().ok())
-            .and_then(|modified_time| modified_time.duration_since(UNIX_EPOCH).ok())
+            .and_then(|time| Some(Self::system_time_as_unix(time)))
+            .unwrap_or(0)
+    }
+
+    pub fn system_time_as_unix(modified: SystemTime) -> i64 {
+        modified
+            .duration_since(UNIX_EPOCH)
+            .ok()
             .map(|duration| duration.as_secs() as i64)
             .unwrap_or(0)
     }

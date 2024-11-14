@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT COUNT(*) as count\nFROM files\nWHERE path = ?\n",
+  "query": "\nSELECT COUNT(*) as count\nFROM files\nWHERE path = ? AND folder_id = ?\n",
   "describe": {
     "columns": [
       {
@@ -10,11 +10,11 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false
     ]
   },
-  "hash": "64737c74603f2b9153fe2fbfc3e1fa724c98e2b0b835f207267b4327ade4403b"
+  "hash": "816c45b1bf9b7f4635ed94c40e3a482931d693516c2ab058d7d36c98b776775f"
 }

@@ -2,7 +2,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use futures::StreamExt;
@@ -31,6 +31,8 @@ pub enum Error {
     IoError(#[from] tokio::io::Error),
     #[error(transparent)]
     DatabaseError(#[from] crate::database::Error),
+    #[error("Could not scan file information")]
+    ScanError,
 }
 
 /// Helper function which returns the Sha256 of `data`
@@ -546,10 +548,7 @@ pub async fn do_full_scan(
         .filter(|e| e.metadata().map(|m| m.is_file()).unwrap_or(false))
     {
         // Insert the file in our database, if untracked
-        // TODO maybe this has to be changed, as is_tracked will return true,
-        // even if we only track the global state of the file: We should be inserting
-        // it anyway
-        if !is_tracked(&pool, &entry.path()).await? {
+        if !is_tracked(&pool, &entry.path(), folder_id).await? {
             let content = read(entry.path()).await.map_err(Error::from)?;
             log::info!("Tracking {entry:?}");
             let f = File::new(folder_id, hash_data(content), &entry);
@@ -563,6 +562,7 @@ pub async fn do_full_scan(
                 &pool,
                 File::get_last_modified_as_unix(&entry),
                 &entry.path(),
+                folder_id,
             )
             .await?
             {
@@ -573,6 +573,7 @@ pub async fn do_full_scan(
                     File::get_last_modified_as_unix(&entry),
                     hash_data(content),
                     &entry.path(),
+                    folder_id,
                 )
                 .await?;
             } else {
@@ -580,6 +581,41 @@ pub async fn do_full_scan(
             }
         }
     }
+
+    Ok(())
+}
+
+/// Updates the database for the following file
+pub async fn do_scan(
+    pool: Arc<sqlx::SqlitePool>,
+    path: &PathBuf,
+    folder_id: u32,
+) -> Result<(), Error> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) => {
+            // TODO this is the default when we deleted the file,
+            // so we should handle it at some point
+            log::info!("Could not retrieve file metadata: {e}");
+            return Err(Error::ScanError);
+        }
+    };
+
+    if !metadata.is_file() {
+        log::warn!("Trying to update non-file");
+        return Err(Error::ScanError);
+    }
+
+    let content = read(path).await.map_err(Error::from)?;
+
+    update_if_newer(
+        &pool,
+        File::system_time_as_unix(metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH)),
+        hash_data(content),
+        &path,
+        folder_id,
+    )
+    .await?;
 
     Ok(())
 }

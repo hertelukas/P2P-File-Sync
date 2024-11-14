@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE files\nSET local_hash = ?, local_last_modified = ?\nWHERE path = ? AND ? > local_last_modified AND folder_id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "e4d1cbda9a6494cd18f608be93d7614a171d91db4e20c5dfff16426711762c4a"
+}

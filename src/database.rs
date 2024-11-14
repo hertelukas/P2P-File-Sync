@@ -43,15 +43,20 @@ pub async fn setup() -> Result<Pool<Sqlite>, Error> {
 }
 
 /// Returns, whether the file at `path` is already in our database.
-pub async fn is_tracked(pool: &sqlx::SqlitePool, path: &Path) -> Result<bool, Error> {
+pub async fn is_tracked(
+    pool: &sqlx::SqlitePool,
+    path: &Path,
+    folder_id: u32,
+) -> Result<bool, Error> {
     let s = path.to_string_lossy().to_string();
     let res = sqlx::query!(
         r#"
 SELECT COUNT(*) as count
 FROM files
-WHERE path = ?
+WHERE path = ? AND folder_id = ?
 "#,
-        s
+        s,
+        folder_id
     )
     .fetch_one(pool)
     .await
@@ -63,15 +68,21 @@ WHERE path = ?
 /// Check if `modified` is newer than the last local version we have tracked at `path`
 /// If we only track the file globally - and do not have a local version yet, this
 /// will return true.
-pub async fn is_newer(pool: &sqlx::SqlitePool, modified: i64, path: &Path) -> Result<bool, Error> {
+pub async fn is_newer(
+    pool: &sqlx::SqlitePool,
+    modified: i64,
+    path: &Path,
+    folder_id: u32,
+) -> Result<bool, Error> {
     let s = path.to_string_lossy().to_string();
     let res = sqlx::query!(
         r#"
 SELECT local_last_modified
 FROM files
-WHERE path = ?
+WHERE path = ? AND folder_id = ?
 "#,
-        s
+        s,
+        folder_id
     )
     .fetch_one(pool)
     .await
@@ -95,18 +106,20 @@ pub async fn update_if_newer(
     modified: i64,
     hash: Vec<u8>,
     path: &Path,
+    folder_id: u32,
 ) -> Result<(), Error> {
     let s = path.to_string_lossy().to_string();
     sqlx::query!(
         r#"
 UPDATE files
 SET local_hash = ?, local_last_modified = ?
-WHERE path = ? AND ? > local_last_modified
+WHERE path = ? AND ? > local_last_modified AND folder_id = ?
 "#,
         hash,
         modified,
         s,
-        modified
+        modified,
+        folder_id
     )
     .execute(pool)
     .await?;
@@ -115,12 +128,13 @@ WHERE path = ? AND ? > local_last_modified
         r#"
 UPDATE files
 SET global_hash = ?, global_last_modified = ?, global_peer = "0"
-WHERE path = ? AND ? > global_last_modified
+WHERE path = ? AND ? > global_last_modified AND folder_id = ?
 "#,
         hash,
         modified,
         s,
-        modified
+        modified,
+        folder_id
     )
     .execute(pool)
     .await?;
@@ -199,7 +213,7 @@ WHERE path = ?
         fill_db(&pool).await;
 
         // Check if tracked file is tracked
-        assert!(is_tracked(&pool, &Path::new("/old")).await.unwrap());
+        assert!(is_tracked(&pool, &Path::new("/old"), 0).await.unwrap());
     }
 
     #[sqlx::test]
@@ -207,7 +221,7 @@ WHERE path = ?
         fill_db(&pool).await;
 
         // Check that new file is marked as untracked
-        assert!(!is_tracked(&pool, &Path::new("/does-not-exist"))
+        assert!(!is_tracked(&pool, &Path::new("/does-not-exist"), 0)
             .await
             .unwrap());
     }
@@ -216,28 +230,28 @@ WHERE path = ?
     async fn test_is_newer(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        assert!(is_newer(&pool, 100, &Path::new("/old")).await.unwrap());
+        assert!(is_newer(&pool, 100, &Path::new("/old"), 0).await.unwrap());
     }
 
     #[sqlx::test]
     async fn test_modified_same(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        assert!(!is_newer(&pool, 100, &Path::new("/new")).await.unwrap());
+        assert!(!is_newer(&pool, 100, &Path::new("/new"), 0).await.unwrap());
     }
 
     #[sqlx::test]
     async fn test_modified_older(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        assert!(!is_newer(&pool, 99, &Path::new("/new")).await.unwrap());
+        assert!(!is_newer(&pool, 99, &Path::new("/new"), 0).await.unwrap());
     }
 
     #[sqlx::test]
     async fn test_modified_negative(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        assert!(!is_newer(&pool, -1000, &Path::new("/old")).await.unwrap());
+        assert!(!is_newer(&pool, -1000, &Path::new("/old"), 0).await.unwrap());
     }
 
     #[sqlx::test]
@@ -256,7 +270,7 @@ WHERE path = ?
 
         insert(&pool, f).await.unwrap();
 
-        assert!(is_tracked(&pool, &Path::new("/insert")).await.unwrap());
+        assert!(is_tracked(&pool, &Path::new("/insert"), 0).await.unwrap());
     }
 
     #[sqlx::test]
@@ -281,7 +295,7 @@ WHERE path = ?
     async fn test_do_update_full(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        update_if_newer(&pool, 101, "xx".to_owned().into(), &Path::new("/new"))
+        update_if_newer(&pool, 101, "xx".to_owned().into(), &Path::new("/new"), 0)
             .await
             .unwrap();
 
@@ -296,7 +310,7 @@ WHERE path = ?
     async fn test_do_not_udpate_hash_if_old(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        update_if_newer(&pool, 99, "xx".to_owned().into(), &Path::new("/new"))
+        update_if_newer(&pool, 99, "xx".to_owned().into(), &Path::new("/new"), 0)
             .await
             .unwrap();
 
@@ -311,7 +325,7 @@ WHERE path = ?
     async fn test_do_not_udpate_hash_if_same(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        update_if_newer(&pool, 100, "xx".to_owned().into(), &Path::new("/new"))
+        update_if_newer(&pool, 100, "xx".to_owned().into(), &Path::new("/new"), 0)
             .await
             .unwrap();
 
@@ -326,7 +340,7 @@ WHERE path = ?
     async fn test_do_only_update_local(pool: SqlitePool) {
         fill_db(&pool).await;
 
-        update_if_newer(&pool, 13, "cc".to_owned().into(), &Path::new("/old"))
+        update_if_newer(&pool, 13, "cc".to_owned().into(), &Path::new("/old"), 0)
             .await
             .unwrap();
 
