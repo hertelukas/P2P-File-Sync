@@ -114,11 +114,17 @@ pub async fn run() -> eyre::Result<()> {
 async fn handle_change(config: Arc<Mutex<Config>>, pool: Arc<sqlx::SqlitePool>, path: PathBuf) {
     let folder_id = {
         let lock = config.lock().unwrap();
-        lock.paths
+        let files: Vec<_> = lock
+            .paths
             .iter()
-            .filter(|p| p.path == path)
-            .collect::<Vec<_>>()[0]
-            .id()
+            .filter(|p| path.starts_with(&p.path))
+            .collect();
+
+        if files.len() != 1 {
+            log::warn!("Cannot find folder_id for {path:?}");
+            return;
+        }
+        files[0].id()
     };
 
     // Update database
