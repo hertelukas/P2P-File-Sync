@@ -5,6 +5,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use bytes::Bytes;
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use sqlx::query_as;
@@ -281,99 +282,37 @@ async fn receive_db_state(
                     .is_shared_with(connection.get_peer_ip().unwrap(), folder_id)
                 {
                     // Accept folder information
-                    let _ = connection.write_frame(&Frame::Yes).await;
-                    let base_path = {
-                        let lock = config.lock().unwrap();
-                        lock.get_path(folder_id)
-                    };
-                    if let Some(base_path) = base_path {
-                        while let Some(frame) = connection.read_frame().await.unwrap() {
-                            match frame {
-                                Frame::InitiatorGlobal {
+                    connection.write_frame(&Frame::Yes).await.unwrap();
+                    while let Some(frame) = connection.read_frame().await.unwrap() {
+                        match frame {
+                            Frame::InitiatorGlobal {
+                                global_hash,
+                                global_last_modified,
+                                global_peer,
+                                path,
+                            } => {
+                                insert_or_update_file(
+                                    connection,
+                                    config.clone(),
+                                    pool.clone(),
                                     global_hash,
                                     global_last_modified,
                                     global_peer,
                                     path,
-                                } => {
-                                    let full_path =
-                                        File::get_full_path(&base_path.to_string_lossy(), &path)
-                                            .to_string_lossy()
-                                            .to_string();
-                                    let peer_addr = if global_peer == "0" {
-                                        connection.get_peer_ip().unwrap().to_string()
-                                    } else {
-                                        global_peer
-                                    };
-
-                                    let hash_as_vec: Vec<u8> = global_hash.clone().into();
-                                    let res = sqlx::query!(
-                                        r#"
-SELECT global_last_modified, global_hash
-FROM files
-WHERE folder_id = ? AND path = ?
-"#,
-                                        folder_id,
-                                        full_path
-                                    )
-                                    .fetch_one(&*pool)
-                                    .await;
-
-                                    if let Ok(res) = res {
-                                        // Need to update our database
-                                        if res.global_hash != global_hash
-                                            && res.global_last_modified < global_last_modified
-                                        {
-                                            log::info!("We need to update {full_path}");
-                                            sqlx::query!(
-                                                r#"
-UPDATE files
-SET global_hash = ?, global_last_modified = ?, global_peer = ?
-WHERE folder_id = ? AND path = ?
-"#,
-                                                hash_as_vec,
-                                                global_last_modified,
-                                                peer_addr,
-                                                folder_id,
-                                                full_path
-                                            )
-                                            .execute(&*pool)
-                                            .await
-                                            .unwrap();
-                                        }
-                                    }
-                                    // Need to insert file
-                                    else {
-                                        log::info!("We are not yet tracking {full_path}");
-                                        sqlx::query!(
-                                            r#"
-INSERT INTO files (folder_id, path, global_hash, global_last_modified, global_peer)
-VALUES (?, ?, ?, ?, ?)
-"#,
-                                            folder_id,
-                                            full_path,
-                                            hash_as_vec,
-                                            global_last_modified,
-                                            peer_addr
-                                        )
-                                        .execute(&*pool)
-                                        .await
-                                        .unwrap();
-                                    }
-                                    // And wait for the next file
-                                    connection.write_frame(&Frame::Yes).await.unwrap();
-                                }
-                                Frame::Done => {
-                                    log::info!("Received information for all files");
-                                    break;
-                                }
-                                _ => log::warn!(
+                                    folder_id,
+                                )
+                                .await;
+                                // And wait for the next file
+                                connection.write_frame(&Frame::Yes).await.unwrap();
+                            }
+                            Frame::Done => {
+                                log::info!("Received information for all files");
+                                break;
+                            }
+                            _ => log::warn!(
                                 "Unexpected packet received while waiting for new file information"
                             ),
-                            }
                         }
-                    } else {
-                        // Should never happen
-                        log::warn!("Tried to sync non-exisitng folder {folder_id}");
                     }
                 } else {
                     // If we do not want this folder information, we expect a new DbSync frame
@@ -485,7 +424,12 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
     }
 }
 
-pub async fn listen_file_sync(config: MutexConf, port: u16) {
+pub async fn listen_file_sync(
+    pool: Arc<sqlx::SqlitePool>,
+    config: MutexConf,
+    port: u16,
+    tx_sync_cmd: Sender<()>,
+) {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
@@ -495,6 +439,8 @@ pub async fn listen_file_sync(config: MutexConf, port: u16) {
         match listener.accept().await {
             Ok((stream, _)) => {
                 let config = config.clone();
+                let pool = pool.clone();
+                let tx_sync_cmd = tx_sync_cmd.clone();
                 tokio::spawn(async move {
                     let mut connection = Connection::new(stream);
                     if let Some(frame) = connection.read_frame().await.unwrap() {
@@ -519,6 +465,44 @@ pub async fn listen_file_sync(config: MutexConf, port: u16) {
                                         .unwrap();
                                 }
                             }
+                            // If we receive a db sync now, this is due to a file change, after having
+                            // synced on start
+                            Frame::DbSync { folder_id } => {
+                                if config
+                                    .lock()
+                                    .unwrap()
+                                    .is_shared_with(connection.get_peer_ip().unwrap(), folder_id)
+                                {
+                                    // Accept
+                                    connection.write_frame(&Frame::Yes).await.unwrap();
+
+                                    // Expect an initiator global, with the new file info
+                                    if let Some(Frame::InitiatorGlobal {
+                                        global_hash,
+                                        global_last_modified,
+                                        global_peer,
+                                        path,
+                                    }) = connection.read_frame().await.unwrap()
+                                    {
+                                        insert_or_update_file(
+                                            &mut connection,
+                                            config,
+                                            pool,
+                                            global_hash,
+                                            global_last_modified,
+                                            global_peer,
+                                            path,
+                                            folder_id,
+                                        )
+                                        .await;
+                                        tx_sync_cmd.send(()).await.unwrap();
+                                    } else {
+                                        log::warn!(
+                                            "Unexpected packet after having started a file sync"
+                                        );
+                                    }
+                                }
+                            }
                             _ => log::warn!(
                                 "Unexpected frame {:?} received while waiting for file request",
                                 frame
@@ -529,6 +513,88 @@ pub async fn listen_file_sync(config: MutexConf, port: u16) {
             }
             Err(e) => log::warn!("Failed to accept connection {}", e),
         }
+    }
+}
+
+async fn insert_or_update_file(
+    connection: &mut Connection,
+    config: MutexConf,
+    pool: Arc<sqlx::SqlitePool>,
+    global_hash: Bytes,
+    global_last_modified: i64,
+    global_peer: String,
+    path: String,
+    folder_id: u32,
+) {
+    let base_path = {
+        let lock = config.lock().unwrap();
+        lock.get_path(folder_id)
+    };
+    if let Some(base_path) = base_path {
+        let full_path = File::get_full_path(&base_path.to_string_lossy(), &path)
+            .to_string_lossy()
+            .to_string();
+        let peer_addr = if global_peer == "0" {
+            connection.get_peer_ip().unwrap().to_string()
+        } else {
+            global_peer
+        };
+
+        let hash_as_vec: Vec<u8> = global_hash.clone().into();
+        let res = sqlx::query!(
+            r#"
+SELECT global_last_modified, global_hash
+FROM files
+WHERE folder_id = ? AND path = ?
+"#,
+            folder_id,
+            full_path
+        )
+        .fetch_one(&*pool)
+        .await;
+
+        if let Ok(res) = res {
+            // Need to update our database
+            if res.global_hash != global_hash && res.global_last_modified < global_last_modified {
+                log::info!("We need to update {full_path}");
+                sqlx::query!(
+                    r#"
+UPDATE files
+SET global_hash = ?, global_last_modified = ?, global_peer = ?
+WHERE folder_id = ? AND path = ?
+"#,
+                    hash_as_vec,
+                    global_last_modified,
+                    peer_addr,
+                    folder_id,
+                    full_path
+                )
+                .execute(&*pool)
+                .await
+                .unwrap();
+            }
+        }
+        // Need to insert file
+        else {
+            log::info!("We are not yet tracking {full_path}");
+            sqlx::query!(
+                r#"
+INSERT INTO files (folder_id, path, global_hash, global_last_modified, global_peer)
+VALUES (?, ?, ?, ?, ?)
+"#,
+                folder_id,
+                full_path,
+                hash_as_vec,
+                global_last_modified,
+                peer_addr
+            )
+            .execute(&*pool)
+            .await
+            .unwrap();
+        }
+    } else {
+        // Should never happen
+        log::warn!("Tried to sync non-exisitng folder {folder_id}");
     }
 }
 
@@ -1095,14 +1161,30 @@ FROM files
 
         // He also wants to listen for file syncs
         let client_config_handle = client_config.clone();
+        let client_pool_handle = client_pool.clone();
+        let tx_client_sync_cmd_handle = tx_client_sync_cmd.clone();
         tokio::spawn(async move {
-            listen_file_sync(client_config_handle, 1239).await;
+            listen_file_sync(
+                client_pool_handle,
+                client_config_handle,
+                1239,
+                tx_client_sync_cmd_handle,
+            )
+            .await;
         });
 
         // So does the server
         let server_config_handle = server_config.clone();
+        let server_pool_handle = server_pool.clone();
+        let tx_server_sync_cmd_handle = tx_server_sync_cmd.clone();
         tokio::spawn(async move {
-            listen_file_sync(server_config_handle, 1238).await;
+            listen_file_sync(
+                server_pool_handle,
+                server_config_handle,
+                1238,
+                tx_server_sync_cmd_handle,
+            )
+            .await;
         });
 
         // Server starts listening to the client for database sync

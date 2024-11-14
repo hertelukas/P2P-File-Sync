@@ -75,8 +75,15 @@ pub async fn run() -> eyre::Result<()> {
     ));
 
     // And accept sync requests
-    let listen_sync_mutex_handle = config.clone();
-    tokio::spawn(listen_file_sync(listen_sync_mutex_handle, file_sync_port));
+    let listen_sync_config_handle = config.clone();
+    let listen_sync_pool_handle = pool.clone();
+    let tx_sync_cmd_handle = tx_sync_cmd.clone();
+    tokio::spawn(listen_file_sync(
+        listen_sync_pool_handle,
+        listen_sync_config_handle,
+        file_sync_port,
+        tx_sync_cmd_handle,
+    ));
 
     // Periodically try to connect to the peers
     let connector_config_handle = config.clone();
