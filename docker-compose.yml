@@ -4,26 +4,22 @@ services:
         networks:
             p2p-network:
                 ipv4_address: 172.20.0.2
-        ports:
-            - "3618:3618"
         environment:
             - RUST_BACKTRACE=1
         volumes:
             - ./docker/config_node1.toml:/root/.config/p2p/config.toml
-            - ./docker/node1_sync/:/root/documents
+            - ./docker/node1_sync/:/root/peer1/documents
 
     p2p-node2:
         build: .
         networks:
             p2p-network:
                 ipv4_address: 172.20.0.3
-        ports:
-            - "3619:3618"
         environment:
             - RUST_BACKTRACE=1
         volumes:
             - ./docker/config_node2.toml:/root/.config/p2p/config.toml
-            - ./docker/node2_sync/:/root/documents
+            - ./docker/node2_sync/:/root/peer2/documents
 
 
 networks:

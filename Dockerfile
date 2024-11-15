@@ -25,5 +25,9 @@ RUN cargo build --release
 # Expose the UDP port for communication
 EXPOSE 3618
 
+# Clean up the build artifacts
+RUN cp ./target/release/p2p_file_sync .
+RUN cargo clean
+
 # Run the binary
-CMD ["./target/release/p2p_file_sync"]
+CMD ["./p2p_file_sync"]
