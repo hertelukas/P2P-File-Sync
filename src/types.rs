@@ -2,7 +2,7 @@ use std::{
     fmt,
     net::IpAddr,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -124,6 +124,14 @@ impl File {
             .ok()
             .map(|duration| duration.as_secs() as i64)
             .unwrap_or(0)
+    }
+
+    pub fn unix_time_as_system(modified: i64) -> SystemTime {
+        if modified >= 0 {
+            UNIX_EPOCH + Duration::from_secs(modified as u64)
+        } else {
+            UNIX_EPOCH - Duration::from_secs(modified.abs() as u64)
+        }
     }
 
     /// Turns the `full_path` at a relative path of `base` and returns `Some(relative_path)`

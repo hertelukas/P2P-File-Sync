@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::Write,
     net::IpAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -409,7 +410,14 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
                         Frame::File { size: _, data } => {
                             let path =
                                 File::get_full_path(&base_path.to_string_lossy(), &file.path);
-                            fs::write(path, data).unwrap();
+
+                            let mut new_file = std::fs::File::create(path).unwrap();
+                            new_file.write_all(&data).unwrap();
+
+                            // Update time, so it does not reflect the time when we synced
+                            new_file
+                                .set_modified(File::unix_time_as_system(file.global_last_modified))
+                                .unwrap();
                         }
                         _ => log::warn!(
                             "Unexpected frame {:?} received while waiting for file request",
