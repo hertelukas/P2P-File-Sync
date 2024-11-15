@@ -698,7 +698,7 @@ pub async fn do_scan(
         Err(e) => {
             // TODO this is the default when we deleted the file,
             // so we should handle it at some point
-            log::info!("Could not retrieve file metadata: {e}");
+            log::info!("Could not retrieve file metadata for {path:?}: {e}");
             return Err(Error::ScanError);
         }
     };

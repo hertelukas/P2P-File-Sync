@@ -154,8 +154,8 @@ async fn handle_change(
 
             if let Some(base_path) = base_path {
                 if let Some(relative_path) = crate::types::File::get_relative_path(
-                    &path.to_string_lossy(),
                     &base_path.to_string_lossy(),
+                    &path.to_string_lossy(),
                 ) {
                     for peer in peers
                         .into_iter()
