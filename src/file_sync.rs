@@ -653,7 +653,13 @@ pub async fn do_full_scan(
         if !is_tracked(&pool, &entry.path(), folder_id).await? {
             let content = read(entry.path()).await.map_err(Error::from)?;
             log::info!("Tracking {entry:?}");
-            let f = File::new(folder_id, hash_data(content), &entry);
+            let time = File::get_last_modified_as_unix(&entry);
+            let f = File::new(
+                folder_id,
+                hash_data(content),
+                entry.path().to_string_lossy().to_string(),
+                time,
+            );
             insert(&pool, f).await.map_err(Error::from)?;
         }
         // We are tracking the file already, check for newer version
@@ -709,15 +715,20 @@ pub async fn do_scan(
     }
 
     let content = read(path).await.map_err(Error::from)?;
-
-    update_if_newer(
-        &pool,
-        File::system_time_as_unix(metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH)),
-        hash_data(content),
-        &path,
-        folder_id,
-    )
-    .await?;
+    let time = File::system_time_as_unix(metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH));
+    // Handle new file
+    if !is_tracked(&pool, path, folder_id).await? {
+        log::info!("Tracking {path:?}");
+        let f = File::new(
+            folder_id,
+            hash_data(content),
+            path.to_string_lossy().to_string(),
+            time,
+        );
+        insert(&pool, f).await.map_err(Error::from)?;
+    } else {
+        update_if_newer(&pool, time, hash_data(content), &path, folder_id).await?;
+    }
 
     let s = path.to_string_lossy().to_string();
     sqlx::query_as!(

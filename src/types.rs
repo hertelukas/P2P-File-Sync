@@ -96,12 +96,11 @@ pub struct File {
 
 impl File {
     /// Used to create a local, not-yet tracked file
-    pub fn new(folder_id: u32, hash: Vec<u8>, entry: &DirEntry) -> Self {
-        let time = Self::get_last_modified_as_unix(entry);
+    pub fn new(folder_id: u32, hash: Vec<u8>, path: String, time: i64) -> Self {
         File {
             // This is necessary, as we use an i64 in the database
             folder_id: folder_id.into(),
-            path: entry.path().to_string_lossy().to_string(),
+            path,
             local_hash: Some(hash.clone()),
             global_hash: hash,
             local_last_modified: Some(time),
