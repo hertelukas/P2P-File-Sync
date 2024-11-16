@@ -13,6 +13,7 @@ mod frame;
 pub use frame::Frame;
 
 pub mod database;
-pub mod file_sync;
+pub mod sync;
+mod scan;
 
 pub mod manager;

@@ -1,49 +1,24 @@
+//! Module responsible for syncing database state and file state
 use std::{
     fs,
     io::Write,
     net::IpAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use bytes::Bytes;
 use futures::StreamExt;
-use sha2::{Digest, Sha256};
 use sqlx::query_as;
 use tokio::{
-    fs::read,
     net::{TcpListener, TcpStream},
     sync::mpsc::{Receiver, Sender},
 };
-use walkdir::WalkDir;
 
-use crate::{
-    config::Config,
-    connection::Connection,
-    database::{insert, is_newer, is_tracked, update_if_newer},
-    frame::Frame,
-    types::File,
-};
+use crate::{config::Config, connection::Connection, frame::Frame, types::File};
 
 type MutexConf = Arc<Mutex<Config>>;
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error(transparent)]
-    IoError(#[from] tokio::io::Error),
-    #[error(transparent)]
-    DatabaseError(#[from] crate::database::Error),
-    #[error("Could not scan file information")]
-    ScanError,
-}
-
-/// Helper function which returns the Sha256 of `data`
-fn hash_data(data: Vec<u8>) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hasher.finalize().to_vec()
-}
 
 /// Tries to connect to all peers. We try to connect to peers
 /// within a fixed interval, in the case that a peer comes online
@@ -642,119 +617,6 @@ pub async fn announce_change(
     }
 }
 
-/// Updates the database by recursively iterating over all files in the path.
-/// This is done by following these steps:
-/// 1. Check if the file is tracked: If not, insert and done.
-/// 2. Check if the file has a newer modified date. If not, done.
-/// 3. Calculate the file hash and update
-pub async fn do_full_scan(
-    pool: Arc<sqlx::SqlitePool>,
-    path: &PathBuf,
-    folder_id: u32,
-) -> Result<(), Error> {
-    for entry in WalkDir::new(path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.metadata().map(|m| m.is_file()).unwrap_or(false))
-    {
-        // Insert the file in our database, if untracked
-        if !is_tracked(&pool, &entry.path(), folder_id).await? {
-            let content = read(entry.path()).await.map_err(Error::from)?;
-            log::info!("Tracking {entry:?}");
-            let time = File::get_last_modified_as_unix(&entry);
-            let f = File::new(
-                folder_id,
-                hash_data(content),
-                entry.path().to_string_lossy().to_string(),
-                time,
-            );
-            insert(&pool, f).await.map_err(Error::from)?;
-        }
-        // We are tracking the file already, check for newer version
-        else {
-            // Is this worth it? Only useful if this is often false, otherwise, calculating
-            // the hash might not be that big of an overhead
-            if is_newer(
-                &pool,
-                File::get_last_modified_as_unix(&entry),
-                &entry.path(),
-                folder_id,
-            )
-            .await?
-            {
-                let content = read(entry.path()).await.map_err(Error::from)?;
-                log::debug!("File has new modified date {entry:?}");
-                update_if_newer(
-                    &pool,
-                    File::get_last_modified_as_unix(&entry),
-                    hash_data(content),
-                    &entry.path(),
-                    folder_id,
-                )
-                .await?;
-            } else {
-                log::debug!("No updated needed for {entry:?}");
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Updates the database for the following file
-pub async fn do_scan(
-    pool: Arc<sqlx::SqlitePool>,
-    path: &PathBuf,
-    folder_id: u32,
-) -> Result<File, Error> {
-    let metadata = match fs::metadata(path) {
-        Ok(metadata) => metadata,
-        Err(e) => {
-            // TODO this is the default when we deleted the file,
-            // so we should handle it at some point
-            log::info!("Could not retrieve file metadata for {path:?}: {e}");
-            return Err(Error::ScanError);
-        }
-    };
-
-    if !metadata.is_file() {
-        log::warn!("Trying to update non-file");
-        return Err(Error::ScanError);
-    }
-
-    let content = read(path).await.map_err(Error::from)?;
-    let time = File::system_time_as_unix(metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH));
-    // Handle new file
-    if !is_tracked(&pool, path, folder_id).await? {
-        log::info!("Tracking {path:?}");
-        let f = File::new(
-            folder_id,
-            hash_data(content),
-            path.to_string_lossy().to_string(),
-            time,
-        );
-        insert(&pool, f).await.map_err(Error::from)?;
-    } else {
-        update_if_newer(&pool, time, hash_data(content), &path, folder_id).await?;
-    }
-
-    let s = path.to_string_lossy().to_string();
-    sqlx::query_as!(
-        File,
-        r#"
-SELECT *
-FROM files
-WHERE path = ? AND folder_id = ?
-"#,
-        s,
-        folder_id
-    )
-    .fetch_one(&*pool)
-    .await
-    .map_err(crate::database::Error::from)
-    .map_err(Error::from)
-}
-
 #[cfg(test)]
 mod tests {
     use sqlx::{
@@ -765,8 +627,9 @@ mod tests {
     use std::{fs::File, str::FromStr};
     use tempfile::{tempdir, TempDir};
     use tokio::sync::mpsc;
+    use walkdir::WalkDir;
 
-    use crate::{Peer, WatchedFolder};
+    use crate::{scan::scan_folder, Peer, WatchedFolder};
 
     use super::*;
 
@@ -774,6 +637,7 @@ mod tests {
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
     }
+
     /// Creates a new temporary directory.
     ///
     /// When TempDir goes out of scope, it may fail to delete the
@@ -833,85 +697,13 @@ FROM files
         (client_pool, server_pool)
     }
 
-    #[sqlx::test]
-    async fn test_normal_scan(pool: SqlitePool) {
-        let dir = create_test_dir();
-        let pool = Arc::new(pool);
-        do_full_scan(pool.clone(), &dir.path().to_path_buf(), 6)
-            .await
-            .unwrap();
-
-        let files = get_all_files(&*pool).await;
-        assert_eq!(files.len(), 2);
-
-        files.into_iter().for_each(|f| {
-            assert!(f.folder_id == 6);
-            assert!(f
-                .path
-                .starts_with(dir.path().to_path_buf().to_string_lossy().as_ref()));
-            assert!(f.local_hash.is_some());
-            assert!(f.local_last_modified.is_some());
-        });
-    }
-
-    #[sqlx::test]
-    async fn test_empty_dir_scan(pool: SqlitePool) {
-        let dir = tempdir().unwrap();
-        let pool = Arc::new(pool);
-        do_full_scan(pool.clone(), &dir.path().to_path_buf(), 6)
-            .await
-            .unwrap();
-
-        let files = get_all_files(&*pool).await;
-        assert_eq!(files.len(), 0);
-    }
-
-    #[sqlx::test]
-    async fn test_empty_file_scan(pool: SqlitePool) {
-        let dir = tempdir().unwrap();
-        let foo_file_path = dir.path().join("foo.txt");
-        let foo_file = File::create(foo_file_path).unwrap();
-        // Probably unnecessary? Not sure if value is dropped if unnamed though
-        drop(foo_file);
-
-        let pool = Arc::new(pool);
-        do_full_scan(pool.clone(), &dir.path().to_path_buf(), 6)
-            .await
-            .unwrap();
-
-        let files = get_all_files(&*pool).await;
-        assert_eq!(files.len(), 1);
-        assert!(files.into_iter().all(|f| f.path.contains("foo.txt")));
-    }
-
-    #[sqlx::test]
-    async fn test_recursive_folder(pool: SqlitePool) {
-        let dir = create_test_dir();
-        let pool = Arc::new(pool);
-        let nested_dir_path = dir.path().join("sub");
-        fs::create_dir(&nested_dir_path).unwrap();
-
-        let third_path = nested_dir_path.join("third");
-        let third_file = File::create(third_path).unwrap();
-        // Needed, so folder can be deleted at the end
-        drop(third_file);
-        do_full_scan(pool.clone(), &dir.path().to_path_buf(), 6)
-            .await
-            .unwrap();
-
-        let files = get_all_files(&*pool).await;
-
-        assert_eq!(files.len(), 3);
-        assert!(files.into_iter().any(|f| f.path.contains("third")))
-    }
-
     #[tokio::test]
     async fn test_sync_db() {
         init();
         let (client_pool, server_pool) = create_two_dbs().await;
 
         let client_dir = create_test_dir();
-        do_full_scan(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
+        scan_folder(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
             .await
             .unwrap();
 
@@ -998,7 +790,7 @@ FROM files
         let (client_pool, server_pool) = create_two_dbs().await;
 
         let client_dir = tempdir().unwrap();
-        do_full_scan(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
+        scan_folder(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
             .await
             .unwrap();
 
@@ -1061,7 +853,7 @@ FROM files
         let (client_pool, server_pool) = create_two_dbs().await;
 
         let client_dir = create_test_dir();
-        do_full_scan(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
+        scan_folder(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
             .await
             .unwrap();
 
@@ -1086,7 +878,7 @@ FROM files
         drop(bar_file);
         drop(baz_file);
 
-        do_full_scan(server_pool.clone(), &server_dir.path().to_path_buf(), 1)
+        scan_folder(server_pool.clone(), &server_dir.path().to_path_buf(), 1)
             .await
             .unwrap();
 
@@ -1179,7 +971,7 @@ FROM files
         let (client_pool, server_pool) = create_two_dbs().await;
         // Client setup
         let client_dir = create_test_dir();
-        do_full_scan(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
+        scan_folder(client_pool.clone(), &client_dir.path().to_path_buf(), 1)
             .await
             .unwrap();
 
@@ -1193,7 +985,7 @@ FROM files
 
         // Server setup
         let server_dir = tempdir().unwrap();
-        do_full_scan(server_pool.clone(), &server_dir.path().to_path_buf(), 1)
+        scan_folder(server_pool.clone(), &server_dir.path().to_path_buf(), 1)
             .await
             .unwrap();
 

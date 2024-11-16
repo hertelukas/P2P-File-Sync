@@ -6,10 +6,8 @@ use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::config::Config;
-use crate::file_sync::{
-    announce_change, do_full_scan, do_scan, listen_file_sync, sync_files, try_connect,
-    wait_incoming,
-};
+use crate::sync::{announce_change, listen_file_sync, sync_files, try_connect, wait_incoming};
+use crate::scan::{scan_file, scan_folder};
 use crate::server::app;
 use crate::{database, watcher};
 
@@ -38,7 +36,7 @@ pub async fn run() -> eyre::Result<()> {
     log::info!("Using config {:?}", config.lock().unwrap());
 
     for path in &*config.lock().unwrap().paths {
-        let _ = do_full_scan(pool.clone(), path.path(), path.id()).await?;
+        let _ = scan_folder(pool.clone(), path.path(), path.id()).await?;
     }
 
     log::info!("Done scanning!");
@@ -142,7 +140,7 @@ async fn handle_change(
     };
 
     // Update database
-    match do_scan(pool, &path, folder_id).await {
+    match scan_file(pool, &path, folder_id).await {
         Ok(file) => {
             // Propagate our changes to other peers, so they update their db
             // and then request the new file from us
