@@ -6,9 +6,9 @@ use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::config::Config;
-use crate::sync::{announce_change, listen_file_sync, sync_files, try_connect, wait_incoming};
 use crate::scan::{scan_file, scan_folder};
 use crate::server::app;
+use crate::sync::{announce_change, listen_file_sync, sync_files, try_connect, wait_incoming};
 use crate::{database, watcher};
 
 pub async fn run() -> eyre::Result<()> {
