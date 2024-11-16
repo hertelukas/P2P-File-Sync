@@ -6,7 +6,6 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use walkdir::DirEntry;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct WatchedFolder {
@@ -107,15 +106,6 @@ impl File {
             global_last_modified: time,
             global_peer: "0".to_owned(),
         }
-    }
-
-    pub fn get_last_modified_as_unix(entry: &DirEntry) -> i64 {
-        entry
-            .metadata()
-            .ok()
-            .and_then(|metadata| metadata.modified().ok())
-            .and_then(|time| Some(Self::system_time_as_unix(time)))
-            .unwrap_or(0)
     }
 
     pub fn system_time_as_unix(modified: SystemTime) -> i64 {

@@ -42,45 +42,7 @@ pub async fn scan_folder(
         .filter_map(|e| e.ok())
         .filter(|e| e.metadata().map(|m| m.is_file()).unwrap_or(false))
     {
-        // Insert the file in our database, if untracked
-        if !is_tracked(&pool, &entry.path(), folder_id).await? {
-            let content = read(entry.path()).await.map_err(Error::from)?;
-            log::info!("Tracking {entry:?}");
-            let time = File::get_last_modified_as_unix(&entry);
-            let f = File::new(
-                folder_id,
-                hash_data(content),
-                entry.path().to_string_lossy().to_string(),
-                time,
-            );
-            insert(&pool, f).await.map_err(Error::from)?;
-        }
-        // We are tracking the file already, check for newer version
-        else {
-            // Is this worth it? Only useful if this is often false, otherwise, calculating
-            // the hash might not be that big of an overhead
-            if is_newer(
-                &pool,
-                File::get_last_modified_as_unix(&entry),
-                &entry.path(),
-                folder_id,
-            )
-            .await?
-            {
-                let content = read(entry.path()).await.map_err(Error::from)?;
-                log::debug!("File has new modified date {entry:?}");
-                update_if_newer(
-                    &pool,
-                    File::get_last_modified_as_unix(&entry),
-                    hash_data(content),
-                    &entry.path(),
-                    folder_id,
-                )
-                .await?;
-            } else {
-                log::debug!("No updated needed for {entry:?}");
-            }
-        }
+        scan_file(pool.clone(), &entry.path().to_owned(), folder_id).await?;
     }
 
     Ok(())
@@ -107,11 +69,11 @@ pub async fn scan_file(
         return Err(Error::ScanError);
     }
 
-    let content = read(path).await.map_err(Error::from)?;
     let time = File::system_time_as_unix(metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH));
     // Handle new file
     if !is_tracked(&pool, path, folder_id).await? {
         log::info!("Tracking {path:?}");
+        let content = read(path).await.map_err(Error::from)?;
         let f = File::new(
             folder_id,
             hash_data(content),
@@ -120,7 +82,14 @@ pub async fn scan_file(
         );
         insert(&pool, f).await.map_err(Error::from)?;
     } else {
-        update_if_newer(&pool, time, hash_data(content), &path, folder_id).await?;
+        // Is this worth it? Only useful if this is often false, otherwise, calculating
+        // the hash might not be that big of an overhead
+        if is_newer(&pool, time, &path, folder_id).await? {
+            let content = read(path).await.map_err(Error::from)?;
+            update_if_newer(&pool, time, hash_data(content), &path, folder_id).await?;
+        } else {
+            log::debug!("No updated needed for {path:?}");
+        }
     }
 
     let s = path.to_string_lossy().to_string();
