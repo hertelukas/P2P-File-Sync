@@ -36,7 +36,7 @@ pub async fn run() -> eyre::Result<()> {
     log::info!("Using config {:?}", config.lock().unwrap());
 
     for path in &*config.lock().unwrap().paths {
-        let _ = scan_folder(pool.clone(), path.path(), path.id()).await?;
+        let _ = scan_folder(pool.clone(), &path.path, path.id).await?;
     }
 
     log::info!("Done scanning!");
@@ -136,7 +136,7 @@ async fn handle_change(
             log::warn!("Cannot find folder_id for {path:?}");
             return;
         }
-        files[0].id()
+        files[0].id
     };
 
     // Update database

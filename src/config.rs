@@ -176,7 +176,7 @@ impl Config {
 
     /// Removes a folder from the config, and also write to file if `store` is true
     pub fn delete_folder_sync(&mut self, id: u32, store: bool) -> Result<(), Error> {
-        self.paths.retain(|f| f.id() != id);
+        self.paths.retain(|f| f.id != id);
 
         if store {
             self.store_sync()?;
@@ -193,9 +193,9 @@ impl Config {
         store: bool,
     ) -> Result<Option<WatchedFolder>, Error> {
         let old_folder = {
-            if let Some(entry) = self.paths.iter_mut().find(|f| f.id() == folder.id()) {
+            if let Some(entry) = self.paths.iter_mut().find(|f| f.id == folder.id) {
                 let old = entry.clone();
-                if entry.path() != folder.path() {
+                if entry.path != folder.path {
                     entry.path = folder.path;
                     Some(old)
                 } else {
@@ -265,8 +265,8 @@ impl Config {
 
     pub fn get_path(&self, folder_id: u32) -> Option<PathBuf> {
         for folder in &self.paths {
-            if folder.id() == folder_id {
-                return Some(folder.path().clone());
+            if folder.id == folder_id {
+                return Some(folder.path.clone());
             }
         }
         None
@@ -295,7 +295,7 @@ mod tests {
     #[tokio::test]
     async fn read_normal() {
         let folder = WatchedFolder::new("/tmp");
-        let id = folder.id();
+        let id = folder.id;
         let conf = Config {
             paths: vec![folder],
             peers: vec![],

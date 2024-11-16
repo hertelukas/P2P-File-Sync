@@ -69,7 +69,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
         CurrentScreen::DeleteFolder(ref folder) => {
             let popup_block = create_popup_block(
                 app,
-                format!("Delete {}", folder.path().to_string_lossy()),
+                format!("Delete {}", folder.path.to_string_lossy()),
                 false,
             )
             .style(Style::default().fg(Color::Red));
@@ -78,7 +78,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
                 "Press ".into(),
                 "y".bold(),
                 " to remove ".into(),
-                folder.path().to_string_lossy().into(),
+                folder.path.to_string_lossy().into(),
                 " from the synchronised folders. This will not delete the folder itself. ".into(),
                 "Press ".into(),
                 "n".bold(),

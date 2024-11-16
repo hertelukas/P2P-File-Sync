@@ -49,12 +49,12 @@ impl From<WatchedFolder> for EditFolderState {
     fn from(folder: WatchedFolder) -> Self {
         EditFolderState {
             path_input: TextBox {
-                text: folder.path().to_string_lossy().to_string(),
-                index: folder.path().to_string_lossy().len(),
+                text: folder.path.to_string_lossy().to_string(),
+                index: folder.path.to_string_lossy().len(),
             },
             id_input: TextBox {
-                text: format!("{:#x}", folder.id()),
-                index: format!("{:#x}", folder.id()).len(),
+                text: format!("{:#x}", folder.id),
+                index: format!("{:#x}", folder.id).len(),
             },
             focus: EditFolderFocus::Folder,
         }
@@ -393,7 +393,7 @@ impl App {
                     // Delete our folder from our local state
                     if let Some(ref mut config) = self.config {
                         // Never fails, as we do not store
-                        config.delete_folder_sync(folder.id(), false).unwrap();
+                        config.delete_folder_sync(folder.id, false).unwrap();
                     }
                     self.current_screen = CurrentScreen::Main;
                     self.current_mode = CurrentMode::Normal;
@@ -581,8 +581,8 @@ mod tests {
 
         match (&folder_state).try_into() as Result<WatchedFolder, _> {
             Ok(f) => {
-                assert_eq!(f.id(), 82);
-                assert_eq!(f.path(), &std::path::PathBuf::from("/foo"));
+                assert_eq!(f.id, 82);
+                assert_eq!(f.path, std::path::PathBuf::from("/foo"));
             }
             Err(_) => panic!("Failed into watched folder"),
         }

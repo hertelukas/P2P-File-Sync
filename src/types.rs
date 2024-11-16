@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct WatchedFolder {
-    id: u32,
+    pub id: u32,
     pub path: PathBuf,
 }
 
@@ -26,14 +26,6 @@ impl WatchedFolder {
             id,
             path: path.as_ref().to_path_buf(),
         }
-    }
-
-    pub fn path(&self) -> &PathBuf {
-        &self.path
-    }
-
-    pub fn id(&self) -> u32 {
-        self.id
     }
 }
 

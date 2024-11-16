@@ -76,7 +76,7 @@ async fn delete_folder(
     {
         let mut config = state.config.lock().unwrap();
 
-        if let Err(e) = config.delete_folder_sync(folder.id(), true) {
+        if let Err(e) = config.delete_folder_sync(folder.id, true) {
             log::warn!("Failed to delete folder {e}");
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(()));
         }
