@@ -161,6 +161,7 @@ pub enum CurrentFocus {
     Peer,
 }
 
+/// Tracks the current state of the application
 pub struct App {
     pub current_screen: CurrentScreen,
     pub current_mode: CurrentMode,
@@ -254,6 +255,7 @@ impl App {
         }
     }
 
+    /// Selects the next folder upwards (so the next smaller index)
     pub fn select_folder_up(&mut self) {
         let n = self.number_folders();
 
@@ -269,6 +271,7 @@ impl App {
         }
     }
 
+    /// Selects the next peer downwards
     pub fn select_peer_down(&mut self) {
         let n = self.number_peers();
 
@@ -284,6 +287,7 @@ impl App {
         }
     }
 
+    /// Selects the next peer upwards
     pub fn select_peer_up(&mut self) {
         let n = self.number_peers();
 
@@ -345,6 +349,8 @@ impl App {
         }
     }
 
+    /// Updates a folder, and also the daemon service.
+    /// Displays error screen on failure
     pub async fn put_folder(&mut self) {
         if let CurrentScreen::EditFolder(folder) = &self.current_screen {
             if let Ok(folder) = folder.try_into() as Result<WatchedFolder, _> {
@@ -380,6 +386,8 @@ impl App {
         }
     }
 
+    /// Deletes a folder, updates the running daemon service
+    /// and displays the error screen on failure
     pub async fn delete_folder(&mut self) {
         if let CurrentScreen::DeleteFolder(folder) = &self.current_screen {
             match self
@@ -409,6 +417,8 @@ impl App {
         }
     }
 
+    /// Creates a new folder by posting the current state to the running daemon service
+    /// and displays the error screen on failure
     pub async fn post_folder(&mut self) {
         if let CurrentScreen::CreateFolder(folder_input) = &self.current_screen {
             if let Ok(folder) = folder_input.try_into() as Result<WatchedFolder, _> {
@@ -444,6 +454,8 @@ impl App {
         }
     }
 
+    /// Loads the config from the running daemon service
+    /// and displays the error screen on failure
     pub async fn fetch_config(&mut self) {
         match self.client.get(self.address.clone()).send().await {
             Ok(resp) => match resp.json::<Config>().await {

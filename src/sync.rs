@@ -408,6 +408,8 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
     }
 }
 
+/// Waits for incomming file sync requests, and sends requested files.
+/// Also reacts to runtime db syncs (initiated by the watcher of a peer)
 pub async fn listen_file_sync(
     pool: Arc<sqlx::SqlitePool>,
     config: MutexConf,
@@ -582,6 +584,7 @@ VALUES (?, ?, ?, ?, ?)
     }
 }
 
+/// Announce to `to` that `file` has changed
 pub async fn announce_change(
     to: IpAddr,
     file: File,
