@@ -79,7 +79,7 @@ async fn wait_incoming_intern(
         .await
         .unwrap();
 
-    log::info!("Listening for database sync on {:?}", listener.local_addr());
+    log::info!("Listening for sync on {:?}", listener.local_addr());
 
     loop {
         match listener.accept().await {

@@ -20,6 +20,10 @@ pub enum Frame {
     DbSync {
         folder_id: u32,
     },
+    // ';'
+    RequestDbSync {
+        folder_id: u32,
+    },
     // '+'
     Yes,
     // '-'
@@ -52,6 +56,11 @@ impl Frame {
         match get_u8(src)? {
             // DbSync
             b'.' => {
+                // Skip 4 bytes folder_id
+                skip(src, 4)
+            }
+            // RequestDbSync
+            b';' => {
                 // Skip 4 bytes folder_id
                 skip(src, 4)
             }
@@ -91,6 +100,10 @@ impl Frame {
             b'.' => {
                 let folder_id: u32 = src.get_u32_le();
                 Ok(Frame::DbSync { folder_id })
+            }
+            b';' => {
+                let folder_id: u32 = src.get_u32_le();
+                Ok(Frame::RequestDbSync { folder_id })
             }
             b'+' => Ok(Frame::Yes),
             b'-' => Ok(Frame::No),
@@ -193,6 +206,22 @@ mod tests {
 
         match frame {
             Frame::DbSync { folder_id } => assert_eq!(folder_id, 0xFFFFFFFF),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn test_parse_request_db_sync() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b';');
+        buf.put(&b"\xFF\xFF\xFF\xFF"[..]);
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        let frame = Frame::parse(&mut buf).unwrap();
+
+        match frame {
+            Frame::RequestDbSync { folder_id } => assert_eq!(folder_id, 0xFFFFFFFF),
             _ => assert!(false),
         }
     }
