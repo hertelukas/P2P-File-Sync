@@ -454,13 +454,22 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
                             let path =
                                 File::get_full_path(&base_path.to_string_lossy(), &file.path);
 
-                            let mut new_file = std::fs::File::create(path).unwrap();
+                            let mut new_file = std::fs::File::create(path.clone()).unwrap();
                             new_file.write_all(&data).unwrap();
 
                             // Update time, so it does not reflect the time when we synced
                             new_file
                                 .set_modified(File::unix_time_as_system(file.global_last_modified))
                                 .unwrap();
+
+                            // And update the database
+                            crate::scan::scan_file(
+                                pool.clone(),
+                                &path,
+                                file.folder_id.try_into().unwrap(),
+                            )
+                            .await
+                            .unwrap();
                         }
                         _ => log::warn!(
                             "Unexpected frame {:?} received while waiting for file request",
