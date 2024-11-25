@@ -115,6 +115,9 @@ impl Connection {
             Frame::RequestDbSync => {
                 self.stream.write_u8(b';').await?;
             }
+            Frame::InitiateDbSync => {
+                self.stream.write_u8(b':').await?;
+            }
             Frame::Yes => {
                 self.stream.write_all(b"+").await?;
             }
@@ -228,6 +231,11 @@ mod tests {
     #[tokio::test]
     async fn test_frame_transfer_db_request() {
         test_frame(Frame::RequestDbSync).await;
+    }
+
+    #[tokio::test]
+    async fn test_frame_transfer_db_initate() {
+        test_frame(Frame::InitiateDbSync).await;
     }
 
     #[tokio::test]

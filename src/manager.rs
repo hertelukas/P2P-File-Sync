@@ -8,7 +8,7 @@ use tokio::task;
 use crate::config::Config;
 use crate::scan::{scan_file, scan_folder};
 use crate::server::app;
-use crate::sync::{announce_change, listen_file_sync, sync_files, try_connect, wait_incoming};
+use crate::sync::{announce_change, sync_files, try_connect, wait_incoming};
 use crate::{database, watcher};
 
 pub async fn run() -> eyre::Result<()> {
@@ -21,14 +21,10 @@ pub async fn run() -> eyre::Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(3617);
-    let db_sync_port: u16 = std::env::var("DB_SERVER_PORT")
+    let sync_port: u16 = std::env::var("SYNC_SERVER_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(3618);
-    let file_sync_port = std::env::var("DB_SERVER_PORT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3619);
     let (tx_watch_cmd, rx_watch_cmd) = mpsc::channel(1);
     let (tx_change, mut rx_change) = mpsc::channel(1);
     let (tx_sync_cmd, rx_sync_cmd) = mpsc::channel(1);
@@ -58,7 +54,7 @@ pub async fn run() -> eyre::Result<()> {
                 change_handler_config_handle.clone(),
                 change_handler_pool_handle.clone(),
                 path,
-                file_sync_port,
+                sync_port,
             )
             .await;
         }
@@ -71,18 +67,7 @@ pub async fn run() -> eyre::Result<()> {
         syncer_pool_handle,
         syncer_config_handle,
         rx_sync_cmd,
-        file_sync_port,
-    ));
-
-    // And accept sync requests
-    let listen_sync_config_handle = config.clone();
-    let listen_sync_pool_handle = pool.clone();
-    let tx_sync_cmd_handle = tx_sync_cmd.clone();
-    tokio::spawn(listen_file_sync(
-        listen_sync_pool_handle,
-        listen_sync_config_handle,
-        file_sync_port,
-        tx_sync_cmd_handle,
+        sync_port,
     ));
 
     // Periodically try to connect to the peers
@@ -93,7 +78,7 @@ pub async fn run() -> eyre::Result<()> {
         connector_pool_handle,
         connector_config_handle,
         connector_sync_cmd_handle,
-        db_sync_port,
+        sync_port,
     ));
     // And listen if someone wants to connect to us
     let listener_config_handle = config.clone();
@@ -103,7 +88,7 @@ pub async fn run() -> eyre::Result<()> {
         listener_pool_handle,
         listener_config_handle,
         listener_sync_cmd_handle,
-        db_sync_port,
+        sync_port,
     ));
 
     let server_config_handle = config.clone();

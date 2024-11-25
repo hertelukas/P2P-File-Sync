@@ -48,12 +48,59 @@ pub async fn try_connect(
                 let pool_handle = pool.clone();
                 let tx_handle = tx_sync_cmd.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream, config_handle, pool_handle, true, tx_handle).await;
+                    handle_outgoing_connection(stream, config_handle, pool_handle, tx_handle).await;
                 });
             }
         }
         tokio::time::sleep(Duration::from_secs(300)).await;
     }
+}
+
+async fn handle_outgoing_connection(
+    stream: TcpStream,
+    config: MutexConf,
+    pool: Arc<sqlx::SqlitePool>,
+    tx_sync_cmd: Sender<()>,
+) {
+    let peer_addr = match stream.peer_addr() {
+        Ok(addr) => addr,
+        Err(e) => {
+            log::error!("Could not read peer address: {e}, dropping connection");
+            return;
+        }
+    };
+
+    let folders = match config.lock().unwrap().shared_folders(peer_addr.ip()) {
+        Some(ids) => ids,
+        None => {
+            log::info!(
+                "Not sharing any folder with {:?}. Dropping connection",
+                peer_addr.ip()
+            );
+            return;
+        }
+    };
+    let mut connection = Connection::new(stream);
+    // First, we send all our db states,
+    // which should not be different to normal introduced updates
+    connection
+        .write_frame(&Frame::InitiateDbSync)
+        .await
+        .expect("Could not send frame to initate db sync");
+    for folder in folders {
+        send_db_state(&mut connection, folder, config.clone(), pool.clone()).await;
+        connection.write_frame(&Frame::Done).await.unwrap();
+    }
+    connection.write_frame(&Frame::Done).await.unwrap();
+
+    // Second, we request the db state of our peer
+    connection
+        .write_frame(&Frame::RequestDbSync)
+        .await
+        .expect("Could not send frame to request db sync");
+    receive_db_state(&mut connection, config.clone(), pool.clone()).await;
+    connection.write_frame(&Frame::Done).await.unwrap();
+    tx_sync_cmd.send(()).await.unwrap();
 }
 
 /// Listens to new incoming connections. On connection establishment,
@@ -89,7 +136,7 @@ async fn wait_incoming_intern(
                 let tx_handle = tx_sync_cmd.clone();
 
                 let t = tokio::spawn(async move {
-                    handle_connection(stream, config, pool, false, tx_handle).await;
+                    handle_incoming_connection(stream, config, pool, tx_handle).await;
                 });
 
                 if once {
@@ -104,14 +151,10 @@ async fn wait_incoming_intern(
 
 /// Handles newly established connections. If we do not share any
 /// folder with the IP, the connection is dropped.
-///
-/// Otherwise, if `initiator`, we start synchronizing the database.
-/// If not, start listening for synchronization requests.
-async fn handle_connection(
+async fn handle_incoming_connection(
     stream: TcpStream,
     config: MutexConf,
     pool: Arc<sqlx::SqlitePool>,
-    initiator: bool,
     tx_sync_cmd: Sender<()>,
 ) {
     let peer_addr = match stream.peer_addr() {
@@ -134,25 +177,50 @@ async fn handle_connection(
     };
     let mut connection = Connection::new(stream);
 
-    if initiator {
-        // Send folder info first
-        for folder in folders {
-            send_db_state(&mut connection, folder, config.clone(), pool.clone()).await;
-            connection.write_frame(&Frame::Done).await.unwrap();
+    // Check if peer wants file, wants to update our database or requests database update
+    while let Some(frame) = connection.read_frame().await.expect("Failed to read frame") {
+        match frame {
+            Frame::InitiateDbSync => {
+                receive_db_state(&mut connection, config.clone(), pool.clone()).await;
+            }
+            Frame::RequestDbSync => {
+                for folder_id in &folders {
+                    send_db_state(&mut connection, *folder_id, config.clone(), pool.clone()).await;
+                    connection.write_frame(&Frame::Done).await.unwrap();
+                }
+                connection.write_frame(&Frame::Done).await.unwrap();
+            }
+            Frame::RequestFile { folder_id, path } => {
+                let base_path = {
+                    let lock = config.lock().unwrap();
+                    lock.get_path(folder_id)
+                };
+                if let Some(base_path) = base_path {
+                    let path = File::get_full_path(&base_path.to_string_lossy(), &path);
+
+                    // TODO handle read failure
+                    let data = fs::read(path).unwrap();
+                    connection
+                        .write_frame(&Frame::File {
+                            size: data.len().try_into().unwrap(),
+                            data: data.into(),
+                        })
+                        .await
+                        .unwrap();
+                }
+            }
+            Frame::Done => {
+                log::info!("Exchange done with {connection:?}, dropping connection");
+                // Notify our file syncer that he might have to sync now
+                tx_sync_cmd.send(()).await.unwrap();
+                return;
+            }
+            _ => {
+                log::warn!("Did not expect {frame:?} as first message on an incoming connection");
+                return;
+            }
         }
-        connection.write_frame(&Frame::Done).await.unwrap();
-        // and then receive updates
-        receive_db_state(&mut connection, config.clone(), pool.clone()).await;
-    } else {
-        receive_db_state(&mut connection, config.clone(), pool.clone()).await;
-        for folder in folders {
-            send_db_state(&mut connection, folder, config.clone(), pool.clone()).await;
-            connection.write_frame(&Frame::Done).await.unwrap();
-        }
-        connection.write_frame(&Frame::Done).await.unwrap();
     }
-    // Notify our syncer
-    tx_sync_cmd.send(()).await.unwrap();
 }
 
 /// This function should be called for each folder which should
@@ -403,101 +471,8 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
             }
         }
         if once {
+            log::info!("This was a one-shot sync, so we are done!");
             return;
-        }
-    }
-}
-
-/// Waits for incomming file sync requests, and sends requested files.
-/// Also reacts to runtime db syncs (initiated by the watcher of a peer)
-pub async fn listen_file_sync(
-    pool: Arc<sqlx::SqlitePool>,
-    config: MutexConf,
-    port: u16,
-    tx_sync_cmd: Sender<()>,
-) {
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
-        .await
-        .unwrap();
-    log::info!("Listening for file sync on {:?}", listener.local_addr());
-
-    loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                let config = config.clone();
-                let pool = pool.clone();
-                let tx_sync_cmd = tx_sync_cmd.clone();
-                tokio::spawn(async move {
-                    let mut connection = Connection::new(stream);
-                    if let Some(frame) = connection.read_frame().await.unwrap() {
-                        match frame {
-                            Frame::RequestFile { folder_id, path } => {
-                                let base_path = {
-                                    let lock = config.lock().unwrap();
-                                    lock.get_path(folder_id)
-                                };
-                                if let Some(base_path) = base_path {
-                                    let path =
-                                        File::get_full_path(&base_path.to_string_lossy(), &path);
-
-                                    // TODO handle read failure
-                                    let data = fs::read(path).unwrap();
-                                    connection
-                                        .write_frame(&Frame::File {
-                                            size: data.len().try_into().unwrap(),
-                                            data: data.into(),
-                                        })
-                                        .await
-                                        .unwrap();
-                                }
-                            }
-                            // If we receive a db sync now, this is due to a file change, after having
-                            // synced on start
-                            Frame::DbSync { folder_id } => {
-                                if config
-                                    .lock()
-                                    .unwrap()
-                                    .is_shared_with(connection.get_peer_ip().unwrap(), folder_id)
-                                {
-                                    // Accept
-                                    connection.write_frame(&Frame::Yes).await.unwrap();
-
-                                    // Expect an initiator global, with the new file info
-                                    if let Some(Frame::InitiatorGlobal {
-                                        global_hash,
-                                        global_last_modified,
-                                        global_peer,
-                                        path,
-                                    }) = connection.read_frame().await.unwrap()
-                                    {
-                                        insert_or_update_file(
-                                            &mut connection,
-                                            config,
-                                            pool,
-                                            global_hash,
-                                            global_last_modified,
-                                            global_peer,
-                                            path,
-                                            folder_id,
-                                        )
-                                        .await;
-                                        tx_sync_cmd.send(()).await.unwrap();
-                                    } else {
-                                        log::warn!(
-                                            "Unexpected packet after having started a file sync"
-                                        );
-                                    }
-                                }
-                            }
-                            _ => log::warn!(
-                                "Unexpected frame {:?} received while waiting for file request",
-                                frame
-                            ),
-                        }
-                    }
-                });
-            }
-            Err(e) => log::warn!("Failed to accept connection {}", e),
         }
     }
 }
@@ -1003,11 +978,19 @@ FROM files
         let (tx_client_sync_cmd, rx_client) = mpsc::channel(1);
         let (tx_server_sync_cmd, rx_server) = mpsc::channel(1);
 
+        let server_port = 1237;
+        let client_port = 1238;
         // Start trying to sync our files
         let client_pool_handle = client_pool.clone();
         let client_config_handle = client_config.clone();
         tokio::spawn(async move {
-            sync_files(client_pool_handle, client_config_handle, rx_client, 1238).await;
+            sync_files(
+                client_pool_handle,
+                client_config_handle,
+                rx_client,
+                server_port,
+            )
+            .await;
         });
 
         let server_pool_handle = server_pool.clone();
@@ -1017,43 +1000,36 @@ FROM files
                 server_pool_handle,
                 server_config_handle,
                 rx_server,
-                1239,
+                client_port,
                 true,
-            )
-            .await;
-        });
-
-        // He also wants to listen for file syncs
-        let client_config_handle = client_config.clone();
-        let client_pool_handle = client_pool.clone();
-        let tx_client_sync_cmd_handle = tx_client_sync_cmd.clone();
-        tokio::spawn(async move {
-            listen_file_sync(
-                client_pool_handle,
-                client_config_handle,
-                1239,
-                tx_client_sync_cmd_handle,
-            )
-            .await;
-        });
-
-        // So does the server
-        let server_config_handle = server_config.clone();
-        let server_pool_handle = server_pool.clone();
-        let tx_server_sync_cmd_handle = tx_server_sync_cmd.clone();
-        tokio::spawn(async move {
-            listen_file_sync(
-                server_pool_handle,
-                server_config_handle,
-                1238,
-                tx_server_sync_cmd_handle,
             )
             .await;
         });
 
         // Server starts listening to the client for database sync
         tokio::spawn(async move {
-            wait_incoming(server_pool.clone(), server_config, tx_server_sync_cmd, 1237).await;
+            wait_incoming(
+                server_pool.clone(),
+                server_config,
+                tx_server_sync_cmd,
+                server_port,
+            )
+            .await;
+        });
+
+        // same for client, as he has to be able to react to file
+        // requests from the server
+        let client_pool_handle = client_pool.clone();
+        let client_config_handle = client_config.clone();
+        let tx_client_handle = tx_client_sync_cmd.clone();
+        tokio::spawn(async move {
+            wait_incoming(
+                client_pool_handle,
+                client_config_handle,
+                tx_client_handle,
+                client_port,
+            )
+            .await;
         });
 
         // Run Client
@@ -1065,7 +1041,7 @@ FROM files
                 client_pool_handle,
                 client_config_handle,
                 tx_client_sync_cmd,
-                1237,
+                server_port,
             )
             .await;
         });

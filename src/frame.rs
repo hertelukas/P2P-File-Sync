@@ -22,6 +22,8 @@ pub enum Frame {
     },
     // ';'
     RequestDbSync,
+    // ':'
+    InitiateDbSync,
     // '+'
     Yes,
     // '-'
@@ -59,6 +61,8 @@ impl Frame {
             }
             // RequestDbSync
             b';' => Ok(()),
+            // InitiateDbSync
+            b':' => Ok(()),
             // Yes
             b'+' => Ok(()),
             // No
@@ -97,6 +101,7 @@ impl Frame {
                 Ok(Frame::DbSync { folder_id })
             }
             b';' => Ok(Frame::RequestDbSync),
+            b':' => Ok(Frame::InitiateDbSync),
             b'+' => Ok(Frame::Yes),
             b'-' => Ok(Frame::No),
             b'*' => Ok(Frame::Done),
@@ -214,6 +219,21 @@ mod tests {
         assert!(matches!(
             Frame::parse(&mut buf).unwrap(),
             Frame::RequestDbSync
+        ));
+    }
+
+    #[test]
+    fn test_parse_initiate_db_sync() {
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.put_u8(b':');
+
+        let mut buf = Cursor::new(&buf[..]);
+
+        Frame::check(&mut buf).unwrap();
+        buf.set_position(0);
+        assert!(matches!(
+            Frame::parse(&mut buf).unwrap(),
+            Frame::InitiateDbSync
         ));
     }
 
