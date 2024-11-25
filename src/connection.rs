@@ -112,9 +112,8 @@ impl Connection {
                 self.stream.write_u8(b'.').await?;
                 self.stream.write_all(&folder_id.to_le_bytes()).await?;
             }
-            Frame::RequestDbSync { folder_id } => {
+            Frame::RequestDbSync => {
                 self.stream.write_u8(b';').await?;
-                self.stream.write_all(&folder_id.to_le_bytes()).await?;
             }
             Frame::Yes => {
                 self.stream.write_all(b"+").await?;
@@ -228,7 +227,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_frame_transfer_db_request() {
-        test_frame(Frame::RequestDbSync { folder_id: 0x123 }).await;
+        test_frame(Frame::RequestDbSync).await;
     }
 
     #[tokio::test]
