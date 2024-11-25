@@ -538,7 +538,8 @@ WHERE folder_id = ? AND path = ?
         // Need to insert file
         else {
             log::info!("We are not yet tracking {full_path}");
-            sqlx::query!(
+            // Can be that we in the meantime track it, so ignore insert fails
+            let _ = sqlx::query!(
                 r#"
 INSERT INTO files (folder_id, path, global_hash, global_last_modified, global_peer)
 VALUES (?, ?, ?, ?, ?)
@@ -550,8 +551,7 @@ VALUES (?, ?, ?, ?, ?)
                 peer_addr
             )
             .execute(&*pool)
-            .await
-            .unwrap();
+            .await;
         }
     } else {
         // Should never happen
@@ -569,6 +569,11 @@ pub async fn announce_change(
 ) {
     if let Ok(stream) = TcpStream::connect((to, port)).await {
         let mut connection = Connection::new(stream);
+
+        if let Err(e) = connection.write_frame(&Frame::InitiateDbSync).await {
+            log::warn!("Failed to send update to {to}: {e}");
+            return;
+        }
 
         if let Err(e) = connection.write_frame(&Frame::DbSync { folder_id }).await {
             log::warn!("Failed to send update to {to}: {e}");
@@ -590,6 +595,9 @@ pub async fn announce_change(
         } else {
             log::warn!("Peer {to} does not seem to be interested in file update")
         }
+        connection.write_frame(&Frame::Done).await.unwrap();
+        connection.write_frame(&Frame::Done).await.unwrap();
+        connection.write_frame(&Frame::Done).await.unwrap();
     } else {
         log::warn!("Could not notify peer about change!");
     }

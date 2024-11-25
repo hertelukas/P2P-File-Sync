@@ -124,12 +124,35 @@ async fn handle_change(
         files[0].id
     };
 
+    let s = path.to_string_lossy().to_string();
+    let old_file = sqlx::query_as!(
+        crate::types::File,
+        r#"
+SELECT *
+FROM files
+WHERE path = ? AND folder_id = ?
+"#,
+        s,
+        folder_id
+    )
+    .fetch_optional(&*pool)
+    .await
+    .unwrap();
+
     // Update database
     match scan_file(pool, &path, folder_id).await {
         Ok(file) => {
             // Propagate our changes to other peers, so they update their db
             // and then request the new file from us
 
+            if let Some(old_file) = old_file {
+                if old_file.global_hash == file.local_hash.clone().unwrap_or(vec![]) {
+                    log::info!(
+                        "Not announcing change for {path:?}, as I just got the global state"
+                    );
+                    return;
+                }
+            }
             let (peers, base_path) = {
                 let lock = config.lock().unwrap();
                 (lock.peers.clone(), lock.get_path(folder_id))
