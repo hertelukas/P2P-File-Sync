@@ -96,7 +96,7 @@ pub async fn run() -> eyre::Result<()> {
         .await
         .unwrap();
     log::info!("Listening for TUI on {:?}", listener.local_addr());
-    axum::serve(listener, app(server_config_handle, tx_watch_cmd))
+    axum::serve(listener, app(server_config_handle, tx_watch_cmd, true))
         .await
         .unwrap();
 
