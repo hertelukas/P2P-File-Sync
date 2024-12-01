@@ -39,7 +39,7 @@ database is updated in the following way:
    + If it is, check if it was modified, by looking at the ~local_last_modified~ property
      - If not, we are done
      - If it was modified, recalculate and update the ~local_hash~
-       - If the local ~last_modified~ is newer then the ~global_last_modified~, update
+       - If the ~local_last_modified~ is newer then the ~global_last_modified~, update
          the ~global_hash~ and the ~global_last_modified~
 *** Connection
 Every connection attempt with peers we share no folder with is immediately
@@ -47,32 +47,52 @@ dropped. Otherwise, for each folder we share, we first check which files
 are out of sync. Generally, only database changes are explicitly "synced",
 the peers have to request file updates based on the state of their database.
 **** Initial Update
-The communication is based on frames, and only updates the database.
-1. The peer initiating the connection sends ~DbSync~, including the folder id.
-2. The peer accepting the connection responds with ~Yes~, if he actually wants
-   to sync the folder. (Might not be the case, if the peer does not sync
-   this folder)
-3. The initiator sends ~InitiatorGlobal~, containing the relative path, the ~global_hash~,
-   the ~global_last_modified~ and the ~global_peer~.
-4. The responder compares the received ~global_hash~ with the one in his database
-   + If they match, do nothing
-   + If he does not have the file, he just stores the global information
-   + If no match, the responder compares the ~global_last_modified~ dates
-     - If responders version is older, update database
-     - If responders version is newer, we handle this case in the second pass
-5. The responder sends ~Yes~ to signal that he is ready to receive the next file
-   information.
-6. If there are more files, repeat with 3.
-7. If not, initiator sends ~Done~ and begin with 1., but with exchanged roles.
-**** Watcher Updates
-On watcher updates, we need to propagate the new global state.
-1. Update local database, by replacing all fields of a path with the new version.
-2. For each peer
-   + Check if we have an established connection, if not, done
-   + Send ~b"sync-change"~, followed by the folder id
-   + Responder responds with ~b"accept-db-sync"~, if interested
-   + Initiator sends ~b"global_hash"~ , ~b"global_last_modified"~
-   + Responder responds with ~b"done"~
-**** TODO File updates
-Based on initial updates, or received watcher updates, a file sync
-might be necessary.
+For each peer, the following steps are done:
+1. Get the next folder which is shared with that peer. If none, continue with 4.
+2. Send ~InitiateDbSync~, so the peer starts to receive the db state.
+3. Send our database state for this folder. See the corresponding section.
+4. Send ~Done~, once done with one folder. Continue with 1.
+5. If all folders are done, send ~Done~.
+6. ~RequestDbSync~, which results in the peer to send their database state.
+7. Start actual file sync
+**** Sending Database
++ Send ~DbSync~ with the ~folder_id~
++ If peer wants info, we receive a ~Yes~, otherwise ~No~, and we are done.
++ For each file we
+  - Send ~InitiatorGlobal~ to send the global file metadata.
+  - Wait for ~Yes~ to continue with next file.
+**** File synchronization
+The file synchronization runs permanently in the background and listens
+on a MPSC channel if it should rerun. If this is the case, the following
+steps are done:
+1. Fetch all files from the database, where either
+   - No local hash exists, meaning that we aren't tracking the file locally
+   - The global hash does not match the local hash, meaning that we have
+     an outdated version.
+2. For each file establish a new connection with the ~global_peer~ of the file
+3. Send a ~RequestFile~ with the file information
+4. Receive a ~File~, write it to disk and update our database
+*** Watcher Changes
+This section describes what happens if files change while we are listening to
+them.
+1. Load the (potentially) old state of the file from the database
+2. Update the database with the current file
+3. If the the ~global_hash~ of the old state and the new ~local_hash~ match, don't
+   have to announce our changes, as we probably just received the update. Done.
+4. If not, iterate over all peers and announce the change by:
+   + Establishing a connection
+   + Sending ~InitiateDbSync~, just like in the initial update
+   + Send ~DbSync~ with the ~folder_id~ of the changed file
+   + Wait for a ~Yes~ to make sure the peer is interested in this folder
+   + Send ~InitiatorGlobal~ with the file state
+
+** Roadmap
+*** TODO CLI [0/2]
+- [ ] Editing of peers
+- [ ] More information on available shortcuts
+*** TODO Sync [0/5]
+- [ ] Use [[https://en.wikipedia.org/wiki/Merkle_tree][Merkle]] tree to reduce sync overhead
+- [ ] Support propagation of deleted files
+- [ ] Rescan if new ~WatchFolder~ is added with the CLI
+- [ ] Partial file updates
+- [ ] Connection pooling, especially for file sync
