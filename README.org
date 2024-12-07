@@ -96,3 +96,13 @@ them.
 - [ ] Rescan if new ~WatchFolder~ is added with the CLI
 - [ ] Partial file updates
 - [ ] Connection pooling, especially for file sync
+*** TODO Testing [0/1]
+Code coverage is at 41.76%. This is partially due to over 400 lines
+untested code in the CLI application. Writing tests for UI is
+difficult and not mission critical, as this is just a wrapper around
+the config file and the webserver, both being tested as part of the
+main service.
+However, there are also no integration tests, due to the rather
+complex setup of the system. Currently, this is manually tested
+with a docker setup.
+- [ ] Write integration tests
