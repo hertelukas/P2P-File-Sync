@@ -11,6 +11,9 @@ use crate::server::app;
 use crate::sync::{announce_change, sync_files, try_connect, wait_incoming};
 use crate::{database, watcher};
 
+const HTTP_SERVER_PORT: u16 = 3617;
+const SYNC_SERVER_PORT: u16 = 3618;
+
 pub async fn run() -> eyre::Result<()> {
     let config = Arc::new(Mutex::new(Config::get().await?));
     let pool = database::setup().await?;
@@ -20,11 +23,11 @@ pub async fn run() -> eyre::Result<()> {
     let http_server_port: u16 = std::env::var("HTTP_SERVER_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(3617);
+        .unwrap_or(HTTP_SERVER_PORT);
     let sync_port: u16 = std::env::var("SYNC_SERVER_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(3618);
+        .unwrap_or(SYNC_SERVER_PORT);
     let (tx_watch_cmd, rx_watch_cmd) = mpsc::channel(1);
     let (tx_change, mut rx_change) = mpsc::channel(1);
     let (tx_sync_cmd, rx_sync_cmd) = mpsc::channel(1);
