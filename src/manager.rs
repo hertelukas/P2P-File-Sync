@@ -149,9 +149,16 @@ WHERE path = ? AND folder_id = ?
             // and then request the new file from us
 
             if let Some(old_file) = old_file {
-                if old_file.global_hash == file.local_hash.clone().unwrap_or(vec![]) {
+                if let Some(local_file_hash) = file.local_hash.clone() {
+                    if old_file.global_hash == local_file_hash {
+                        log::info!(
+                            "Not announcing change for {path:?}, as I just got the global state"
+                        );
+                        return;
+                    }
+                } else {
                     log::info!(
-                        "Not announcing change for {path:?}, as I just got the global state"
+                        "Not announcing change for {path:?}, as we have no local hash (yet)"
                     );
                     return;
                 }

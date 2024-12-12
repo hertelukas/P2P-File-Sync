@@ -175,14 +175,22 @@ async fn handle_incoming_connection(
             return;
         }
     };
+
     let mut connection = Connection::new(stream);
 
     // Check if peer wants file, wants to update our database or requests database update
     while let Some(frame) = connection.read_frame().await.expect("Failed to read frame") {
+        log::info!(
+            "New connection from {:?}, wants to {:?}",
+            connection.get_peer_ip(),
+            frame
+        );
         match frame {
+            // Peer wants to send us update
             Frame::InitiateDbSync => {
                 receive_db_state(&mut connection, config.clone(), pool.clone()).await;
             }
+            // We want to send update
             Frame::RequestDbSync => {
                 for folder_id in &folders {
                     send_db_state(&mut connection, *folder_id, config.clone(), pool.clone()).await;
@@ -210,7 +218,9 @@ async fn handle_incoming_connection(
                 }
             }
             Frame::Done => {
-                log::info!("Exchange done with {connection:?}, dropping connection");
+                log::info!(
+                    "Exchange done with {connection:?}, dropping connection, let us sync files"
+                );
                 // Notify our file syncer that he might have to sync now
                 tx_sync_cmd.send(()).await.unwrap();
                 return;
@@ -351,7 +361,7 @@ async fn receive_db_state(
                                 connection.write_frame(&Frame::Yes).await.unwrap();
                             }
                             Frame::Done => {
-                                log::info!("Received information for all files");
+                                log::info!("Received information for all files in {folder_id}");
                                 break;
                             }
                             _ => log::warn!(
@@ -365,7 +375,10 @@ async fn receive_db_state(
                 }
             }
             Frame::Done => {
-                log::info!("Received all folder information from peer");
+                log::info!(
+                    "Received all folder information from peer {:?}",
+                    connection.get_peer_ip()
+                );
                 return;
             }
             _ => {
@@ -462,6 +475,7 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
                                 .set_modified(File::unix_time_as_system(file.global_last_modified))
                                 .unwrap();
 
+                            log::info!("Scanning our newly received file at {:?}", path);
                             // And update the database
                             crate::scan::scan_file(
                                 pool.clone(),
@@ -483,6 +497,7 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
             log::info!("This was a one-shot sync, so we are done!");
             return;
         }
+        log::info!("File sync done");
     }
 }
 
@@ -576,6 +591,7 @@ pub async fn announce_change(
     folder_id: u32,
     port: u16,
 ) {
+    log::info!("File {:?} has changed!", file.path);
     if let Ok(stream) = TcpStream::connect((to, port)).await {
         let mut connection = Connection::new(stream);
 

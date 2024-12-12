@@ -113,7 +113,7 @@ pub async fn update_if_newer(
         r#"
 UPDATE files
 SET local_hash = ?, local_last_modified = ?
-WHERE path = ? AND ? > local_last_modified AND folder_id = ?
+WHERE path = ? AND (? > local_last_modified OR local_last_modified IS NULL) AND folder_id = ?
 "#,
         hash,
         modified,

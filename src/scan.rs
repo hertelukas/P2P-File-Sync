@@ -6,7 +6,7 @@ use tokio::fs::read;
 use walkdir::WalkDir;
 
 use crate::{
-    database::{insert, is_newer, is_tracked, update_if_newer},
+    database::{insert, is_tracked, update_if_newer},
     types::File,
 };
 
@@ -82,14 +82,9 @@ pub async fn scan_file(
         );
         insert(&pool, f).await.map_err(Error::from)?;
     } else {
-        // Is this worth it? Only useful if this is often false, otherwise, calculating
-        // the hash might not be that big of an overhead
-        if is_newer(&pool, time, &path, folder_id).await? {
-            let content = read(path).await.map_err(Error::from)?;
-            update_if_newer(&pool, time, hash_data(content), &path, folder_id).await?;
-        } else {
-            log::debug!("No updated needed for {path:?}");
-        }
+        // TODO could be skipped, if we first check if actually newer
+        let content = read(path).await.map_err(Error::from)?;
+        update_if_newer(&pool, time, hash_data(content), &path, folder_id).await?;
     }
 
     let s = path.to_string_lossy().to_string();

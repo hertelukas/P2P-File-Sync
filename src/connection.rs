@@ -55,7 +55,7 @@ impl Connection {
         loop {
             // Attempt to parse a frame
             if let Some(frame) = self.parse_frame()? {
-                log::info!("Received frame: {:?}", frame);
+                log::debug!("Received frame: {:?}", frame);
                 return Ok(Some(frame));
             }
 
@@ -106,7 +106,7 @@ impl Connection {
 
     /// Write a frame to the stream
     pub async fn write_frame(&mut self, frame: &Frame) -> Result<(), Error> {
-        log::info!("Sending frame: {:?}", frame);
+        log::debug!("Sending frame: {:?}", frame);
         match frame {
             Frame::DbSync { folder_id } => {
                 self.stream.write_u8(b'.').await?;
