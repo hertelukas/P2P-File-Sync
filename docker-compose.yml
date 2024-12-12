@@ -7,8 +7,9 @@ services:
         environment:
             - RUST_BACKTRACE=1
         volumes:
-            - ./docker/config_node1.toml:/root/.config/p2p/config.toml
-            - ./docker/node1_sync/:/root/peer1/documents
+          - ./docker/config_node1.toml:/home/ubuntu/.config/p2p/config.toml:rw
+          - ./docker/node1_sync/:/home/ubuntu/peer1/documents:rw
+        command: cargo run --release
 
     p2p-node2:
         build: .
@@ -18,9 +19,9 @@ services:
         environment:
             - RUST_BACKTRACE=1
         volumes:
-            - ./docker/config_node2.toml:/root/.config/p2p/config.toml
-            - ./docker/node2_sync/:/root/peer2/documents
-
+          - ./docker/config_node2.toml:/home/ubuntu/.config/p2p/config.toml:rw
+          - ./docker/node2_sync/:/home/ubuntu/peer2/documents:rw
+        command: cargo run --release
 
 networks:
     p2p-network:

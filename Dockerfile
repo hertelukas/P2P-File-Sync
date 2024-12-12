@@ -9,25 +9,21 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
+USER ubuntu
+
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH=/root/.cargo/bin:$PATH
+ENV PATH=/home/ubuntu/.cargo/bin:$PATH
 
-# Set the working directory in the container
-WORKDIR /app
+WORKDIR /home/ubuntu
 
 # Copy your Rust project files to the container
 COPY . .
-
+USER root
+RUN chown -R ubuntu:ubuntu /home/ubuntu
+USER ubuntu
 # Build the Rust project
 RUN cargo build --release
 
 # Expose the UDP port for communication
 EXPOSE 3618
-
-# Clean up the build artifacts
-RUN cp ./target/release/p2p_file_sync .
-RUN cargo clean
-
-# Run the binary
-CMD ["./p2p_file_sync"]

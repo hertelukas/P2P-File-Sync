@@ -4,4 +4,4 @@ folders = [1]
 
 [[paths]]
 id = 1
-path = "/root/peer1/documents/"
+path = "/home/ubuntu/peer1/documents/"
