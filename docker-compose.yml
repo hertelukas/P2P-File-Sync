@@ -10,6 +10,8 @@ services:
           - ./docker/config_node1.toml:/home/ubuntu/.config/p2p/config.toml:rw
           - ./docker/node1_sync/:/home/ubuntu/peer1/documents:rw
         command: cargo run --release
+        ports:
+          - 3617:3617
 
     p2p-node2:
         build: .
