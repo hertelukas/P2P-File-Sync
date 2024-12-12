@@ -467,6 +467,11 @@ WHERE (global_hash <> local_hash) OR (local_hash IS NULL)
                             let path =
                                 File::get_full_path(&base_path.to_string_lossy(), &file.path);
 
+                            // Potentially create directory
+                            if let Some(parent) = path.parent() {
+                                std::fs::create_dir_all(parent).unwrap();
+                            }
+
                             let mut new_file = std::fs::File::create(path.clone()).unwrap();
                             new_file.write_all(&data).unwrap();
 
